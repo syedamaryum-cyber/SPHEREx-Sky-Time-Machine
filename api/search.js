@@ -8,12 +8,16 @@ const IRSA_FETCH_HEADERS = {
   "Accept": "application/x-votable+xml;q=0.9, text/xml;q=0.8, application/json;q=0.7, text/plain;q=0.6"
 };
 
-async function fetchIrsaWithDiagnostics(url) {
+async function fetchIrsaWithDiagnostics(url, options = {}) {
   const startedAt = Date.now();
   let response;
   try {
     response = await fetch(url, {
-      headers: IRSA_FETCH_HEADERS,
+      ...options,
+      headers: {
+        ...IRSA_FETCH_HEADERS,
+        ...(options.headers || {})
+      },
       cf: { cacheTtl: 0, cacheEverything: false }
     });
   } catch (cause) {
@@ -209,17 +213,25 @@ async function queryTapFallback(ra, dec, radius, filters, requested) {
     "ORDER BY p.time_bounds_lower"
   ].join(" ");
 
-  const endpoint = new URL("https://irsa.ipac.caltech.edu/TAP/sync");
-  endpoint.searchParams.set("REQUEST", "doQuery");
-  endpoint.searchParams.set("LANG", "ADQL");
-  endpoint.searchParams.set("QUERY", query);
-  endpoint.searchParams.set("FORMAT", "VOTABLE");
-  endpoint.searchParams.set("MAXREC", "2000");
+  const endpoint = "https://irsa.ipac.caltech.edu/TAP/sync";
+  const formBody = new URLSearchParams({
+    REQUEST: "doQuery",
+    LANG: "ADQL",
+    QUERY: query,
+    FORMAT: "VOTABLE",
+    MAXREC: "2000"
+  });
 
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetchIrsaWithDiagnostics(endpoint.toString());
+      const response = await fetchIrsaWithDiagnostics(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: formBody.toString()
+      });
       const responseText = await response.text();
       const rows = parseVOTable(responseText, "spherex_tap");
       return rows.filter(row => {
