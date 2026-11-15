@@ -28,7 +28,7 @@ input,select{width:100%;background:#081221;border:1px solid #30445f;border-radiu
 <label for="target">Challenge target</label>
 <select id="target">
 <option value="custom">Custom coordinates</option><option value="wise">WISE 0855</option>
-<option value="barnard">Barnard’s Star (enter coordinates)</option><option value="epsilon">Epsilon Indi B (enter coordinates)</option>
+<option value="barnard">Barnard’s Star</option><option value="epsilon">Epsilon Indi B (enter coordinates)</option>
 <option value="rwaur">RW Aurigae (enter coordinates)</option><option value="rdraco">R Draconis (enter coordinates)</option>
 </select>
 <div class="grid2"><div><label for="ra">Right Ascension (deg)</label><input id="ra" type="number" step="any" value="133.795129"></div><div><label for="dec">Declination (deg)</label><input id="dec" type="number" step="any" value="-7.245147"></div></div>
@@ -46,7 +46,7 @@ input,select{width:100%;background:#081221;border:1px solid #30445f;border-radiu
 <h3>Wavelength range (optional)</h3>
 <div class="grid2"><div><label for="waveMin">Minimum (µm)</label><input id="waveMin" type="number" min="0" step="any" placeholder="e.g. 1.0"></div><div><label for="waveMax">Maximum (µm)</label><input id="waveMax" type="number" min="0" step="any" placeholder="e.g. 2.4"></div></div>
 <button class="primary" id="search">SEARCH LIVE SPHEREX ARCHIVE ↗</button>
-<div class="hint">Coordinates are J2000/ICRS. Choose collections explicitly. Dates and wavelengths are optional. The DR1 cube collection is a separate all-sky product; select it when needed. Target coordinates other than WISE 0855 must be entered manually.</div>
+<div class="hint">Coordinates are J2000/ICRS. Barnard’s Star and WISE 0855 presets fill catalogued coordinates automatically; other targets currently require manual coordinates. Choose collections explicitly. Dates and wavelengths are optional. The DR1 cube collection is a separate all-sky product.</div>
 </section>
 <section class="panel">
 <h2>02 / Archive results</h2>
@@ -98,7 +98,12 @@ input,select{width:100%;background:#081221;border:1px solid #30445f;border-radiu
 const $=id=>document.getElementById(id);
 const collectionInputs=[...document.querySelectorAll('input[name="collection"]')];
 $("target").addEventListener("change",e=>{
-  if(e.target.value==="wise"){$("ra").value="133.795129";$("dec").value="-7.245147";}
+  const presets={
+    wise:{ra:"133.795129",dec:"-7.245147"},
+    barnard:{ra:"269.4520778",dec:"4.69336497"}
+  };
+  const preset=presets[e.target.value];
+  if(preset){$("ra").value=preset.ra;$("dec").value=preset.dec;}
   else if(e.target.value!=="custom"){$("ra").value="";$("dec").value="";}
 });
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
