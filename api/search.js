@@ -2,6 +2,42 @@ export const access = "public";
 export const methods = ["POST"];
 
 const SIA_ENDPOINT = "https://irsa.ipac.caltech.edu/SIA";
+
+const IRSA_FETCH_HEADERS = {
+  "User-Agent": "StardustSyndicate-SPHEREx/1.0 (NASA-Space-Apps-2026)",
+  "Accept": "application/x-votable+xml;q=0.9, text/xml;q=0.8, application/json;q=0.7, text/plain;q=0.6"
+};
+
+async function fetchIrsaWithDiagnostics(url) {
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await fetch(url, {
+      headers: IRSA_FETCH_HEADERS,
+      cf: { cacheTtl: 0, cacheEverything: false }
+    });
+  } catch (cause) {
+    const elapsed = Date.now() - startedAt;
+    const detail = String(cause?.message || cause).replace(/\\s+/g, " ").slice(0, 240);
+    throw new Error("IRSA network fetch failed (" + elapsed + "ms) | cause=" + detail);
+  }
+
+  if (!response.ok) {
+    const rawSnippet = (await response.text()).replace(/\\s+/g, " ").slice(0, 300);
+    const serverHeader = response.headers.get("server") || "unknown";
+    const cfRay = response.headers.get("cf-ray") || "none";
+    const contentType = response.headers.get("content-type") || "unknown";
+    const error = new Error(
+      "IRSA HTTP " + response.status + " (" + (Date.now() - startedAt) +
+      "ms) | server=" + serverHeader + " | cf-ray=" + cfRay +
+      " | content-type=" + contentType + " | body=" + rawSnippet
+    );
+    error.retryable = [429, 502, 503, 504].includes(response.status);
+    throw error;
+  }
+
+  return response;
+}
 const COLLECTIONS = {
   wide: ["spherex_dr1", "spherex_qr3"],
   deep: ["spherex_dr1_deep", "spherex_qr3_deep"],
@@ -113,16 +149,8 @@ async function queryCollection(collection, ra, dec, radius, filters) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(url.toString(), {
-        headers: { Accept: "application/x-votable+xml, text/xml" }
-      });
+      const response = await fetchIrsaWithDiagnostics(url.toString());
       const responseText = await response.text();
-      if (!response.ok) {
-        const error = new Error("IRSA HTTP " + response.status + " (" + collection + "): " +
-          responseText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 220));
-        error.retryable = [429, 502, 503, 504].includes(response.status);
-        throw error;
-      }
       if (responseText.trim().startsWith("{")) {
         const parsed = JSON.parse(responseText);
         const rows = Array.isArray(parsed) ? parsed : (parsed.data || parsed.rows || parsed.results || []);
@@ -190,16 +218,8 @@ async function queryTapFallback(ra, dec, radius, filters, requested) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(endpoint.toString(), {
-        headers: { Accept: "application/x-votable+xml, text/xml" }
-      });
+      const response = await fetchIrsaWithDiagnostics(endpoint.toString());
       const responseText = await response.text();
-      if (!response.ok) {
-        const error = new Error("IRSA TAP HTTP " + response.status + ": " +
-          responseText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 220));
-        error.retryable = [429, 502, 503, 504].includes(response.status);
-        throw error;
-      }
       const rows = parseVOTable(responseText, "spherex_tap");
       return rows.filter(row => {
         const value = String(row.access_url || "");
