@@ -100,7 +100,7 @@
   const preloadQueue = [];
   const queuedPreloads = new Set();
   let preloadWorkersRunning = 0;
-  const PRELOAD_WORKERS = 2;
+  const PRELOAD_WORKERS = 1;
 
   function runPreloadWorkers() {
     while (preloadWorkersRunning < PRELOAD_WORKERS && preloadQueue.length) {
@@ -120,7 +120,7 @@
 
     // Keep only a short look-ahead. Preloading the entire timeline can
     // launch more than a hundred archive requests for a single search.
-    const lookAhead = Math.min(2, epochs.length - 1);
+    const lookAhead = Math.min(1, epochs.length - 1);
     for (let offset = 1; offset <= lookAhead; offset++) {
       const epoch = epochs[index + offset];
       if (!epoch) continue;
@@ -146,15 +146,18 @@
     const preferredProduct = productIdentity(previousRecord);
     activeIndex = Math.max(0, Math.min(epochs.length - 1, index));
     const epoch = epochs[activeIndex];
-    if (productIndex !== null && productIndex !== undefined) {
-      activeProduct = Math.max(0, Math.min(epoch.products.length - 1, productIndex));
-    } else {
-      const matchingProduct = preferredProduct
-        ? epoch.products.findIndex(item => productIdentity(item) === preferredProduct)
-        : -1;
-      activeProduct = matchingProduct >= 0 ? matchingProduct : 0;
-    }
-    const record = epoch.products[activeProduct];
+
+    const matchingProduct = preferredProduct
+      ? epoch.products.findIndex(item => productIdentity(item) === preferredProduct)
+      : -1;
+    const requestedProduct = productIndex !== null && productIndex !== undefined
+      ? Math.max(0, Math.min(epoch.products.length - 1, productIndex))
+      : (matchingProduct >= 0 ? matchingProduct : 0);
+
+    const productOrder = [
+      requestedProduct,
+      ...epoch.products.map((_, i) => i).filter(i => i !== requestedProduct)
+    ];
     const token = ++selectionToken;
 
     range.value = String(activeIndex);
@@ -169,20 +172,36 @@
       option.textContent = productLabel(item, i);
       productSelect.appendChild(option);
     });
-    productSelect.value = String(activeProduct);
 
     summary.textContent = epochs.length + " observing epochs · " +
       epochs.reduce((total, item) => total + item.products.length, 0) + " FITS products";
     root.dataset.loading = "true";
     caption.dataset.state = "loading";
 
-    const loaded = await window.SpherexViewer.loadRecord(record, searchCoordinates);
-    if (token !== selectionToken) return loaded;
+    let loaded = false;
+    let loadedProduct = -1;
+    for (const candidate of productOrder) {
+      if (token !== selectionToken) return false;
+      activeProduct = candidate;
+      productSelect.value = String(candidate);
+      loaded = await window.SpherexViewer.loadRecord(epoch.products[candidate], searchCoordinates);
+      if (token !== selectionToken) return loaded;
+      if (loaded) {
+        loadedProduct = candidate;
+        break;
+      }
+    }
 
     root.dataset.loading = "false";
     caption.dataset.state = loaded ? "loaded" : "error";
-    if (!loaded) caption.textContent += " · FITS cutout could not be loaded; try another product or epoch.";
-    else preloadUpcoming(activeIndex);
+    if (!loaded) {
+      caption.textContent += " · all FITS products in this epoch failed; playback can skip this epoch.";
+    } else {
+      if (loadedProduct !== requestedProduct) {
+        caption.textContent += " · requested product unavailable; loaded another product from this epoch.";
+      }
+      preloadUpcoming(activeIndex);
+    }
     return loaded;
   }
 
