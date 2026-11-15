@@ -204,7 +204,7 @@
         if (token !== selectionToken) return false;
         activeProduct = candidate;
         productSelect.value = String(candidate);
-        loaded = await window.SpherexViewer.loadRecord(epoch.products[candidate], searchCoordinates);
+        loaded = await window.SpherexViewer.loadRecord(epoch.products[candidate], searchCoordinates, { quiet: true });
         if (token !== selectionToken) return false;
         if (loaded) {
           loadedProduct = candidate;
@@ -225,28 +225,33 @@
         return true;
       }
 
-      caption.dataset.state = "error";
-      caption.textContent += " · observation unavailable; automatically trying the next epoch…";
+      // Keep failed records in the archive, but do not present their error
+      // frames as playable observations. Continue to the next candidate.
     }
 
     root.dataset.loading = "false";
     caption.dataset.state = "error";
-    caption.textContent = "No loadable FITS observations were found in this timeline. Try another target or search range.";
+    caption.textContent = "No loadable FITS observations were found in this sequence. The archive records remain available in the results table.";
     return false;
   }
 
+  const wait = ms => new Promise(resolve => window.setTimeout(resolve, ms));
+
   async function advance(token) {
-    if (!playing || token !== playbackToken) return;
-    const nextIndex = (activeIndex + 1) % epochs.length;
-    const loaded = await selectEpoch(nextIndex, null, 1);
-    if (!playing || token !== playbackToken) return;
-    if (!loaded) {
-      stopPlayback();
-      caption.dataset.state = "error";
-      caption.textContent = "Playback stopped: no loadable FITS images were found in this timeline.";
-      return;
+    // A single controlled loop avoids recursive playback races and continues
+    // only after the current FITS request has settled.
+    while (playing && token === playbackToken && epochs.length > 1) {
+      const nextIndex = (activeIndex + 1) % epochs.length;
+      const loaded = await selectEpoch(nextIndex, null, 1);
+      if (!playing || token !== playbackToken) return;
+      if (!loaded) {
+        stopPlayback();
+        caption.dataset.state = "error";
+        caption.textContent = "Playback stopped: no loadable FITS observations remain.";
+        return;
+      }
+      await wait(1100);
     }
-    window.setTimeout(() => advance(token), 900);
   }
 
   function setTimeline(rows, ra, dec) {
