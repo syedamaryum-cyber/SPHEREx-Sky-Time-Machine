@@ -575,18 +575,41 @@
 
   window.addEventListener("spherex:search-results", event => {
     const rows = event.detail?.rows;
-    const has2DProduct = Array.isArray(rows) && rows.some(row =>
-      row && row.collection !== "spherex_dr1_cube" &&
-      typeof row.access_url === "string" && !/hips5_cube/i.test(row.access_url)
-    );
-    if (!has2DProduct) {
-      const hasCube = Array.isArray(rows) && rows.some(row =>
-        row && (row.collection === "spherex_dr1_cube" || /hips5_cube/i.test(String(row.access_url || "")))
-      );
-      clearViewer(hasCube
-        ? "All-Sky Cube records found. These are 3D spectral FITS products; open them from the archive table. The previous 2D image has been cleared."
-        : "No verified 2D SPHEREx observation is currently loaded. The previous image has been cleared.");
+
+    // The search UI dispatches an empty result set immediately when a new
+    // query starts. Do not label that temporary state as "no 2D data".
+    if (!Array.isArray(rows) || rows.length === 0) {
+      clearViewer("Waiting for SPHEREx archive results. The previous image has been cleared.");
+      return;
     }
+
+    const isCubeRecord = row =>
+      row && (row.collection === "spherex_dr1_cube" ||
+        /hips5_cube/i.test(String(row.access_url || "")));
+
+    const has2DProduct = rows.some(row => {
+      if (!row || isCubeRecord(row) || typeof row.access_url !== "string") return false;
+      try {
+        const productUrl = new URL(row.access_url);
+        return productUrl.protocol === "https:" &&
+          productUrl.hostname === "irsa.ipac.caltech.edu" &&
+          /^\/ibe\/data\/spherex\/(?:dr1|qr3)\//i.test(productUrl.pathname) &&
+          productUrl.pathname.toLowerCase().endsWith(".fits");
+      } catch {
+        return false;
+      }
+    });
+
+    if (has2DProduct) {
+      status.className = "status good";
+      status.textContent = "Verified 2D SPHEREx FITS products found in the archive. Select an observation to load its cutout.";
+      return;
+    }
+
+    const hasCube = rows.some(isCubeRecord);
+    clearViewer(hasCube
+      ? "All-Sky Cube records found. These are 3D spectral FITS products; open them from the archive table. The previous 2D image has been cleared."
+      : "No verified 2D SPHEREx observation is currently loaded. The previous image has been cleared.");
   });
 
   window.SpherexViewer = {
