@@ -38,6 +38,7 @@ async function fetchIrsaWithDiagnostics(url) {
 
   return response;
 }
+
 const COLLECTIONS = {
   wide: ["spherex_dr1", "spherex_qr3"],
   deep: ["spherex_dr1_deep", "spherex_qr3_deep"],
