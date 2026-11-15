@@ -186,7 +186,14 @@ export default async function (req, res) {
         layers[name.toLowerCase()] = image.values;
 
         if (name === "IMAGE") {
-          const finite = image.values.filter(Number.isFinite).sort((a, b) => a - b);
+          let imageMin = Infinity;
+          let imageMax = -Infinity;
+          for (const value of image.values) {
+            if (Number.isFinite(value)) {
+              if (value < imageMin) imageMin = value;
+              if (value > imageMax) imageMax = value;
+            }
+          }
           metadata = {
             width: image.width,
             height: image.height,
@@ -195,8 +202,8 @@ export default async function (req, res) {
             mjdObs: header["MJD-OBS"] || null,
             unit: header.BUNIT || null,
             psfFwhm: header.PSF_FWHM ?? null,
-            imageMin: finite.length ? finite[0] : null,
-            imageMax: finite.length ? finite[finite.length - 1] : null,
+            imageMin: imageMin === Infinity ? null : imageMin,
+            imageMax: imageMax === -Infinity ? null : imageMax,
             wcs: findWcs(header)
           };
         }
