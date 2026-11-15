@@ -109,7 +109,7 @@ function findWcs(header) {
 
 async function fetchCutout(url) {
   let lastError;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const response = await fetch(url, {
         headers: { Accept: "application/fits, application/octet-stream" },
