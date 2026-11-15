@@ -314,7 +314,7 @@
   function cutoutCacheKey(record, coordinates) {
     const ra = Number(coordinates?.ra ?? document.getElementById("ra").value);
     const dec = Number(coordinates?.dec ?? document.getElementById("dec").value);
-    return [record.access_url, ra.toFixed(8), dec.toFixed(8), "0.1"].join("|");
+    return [record.access_url, ra.toFixed(8), dec.toFixed(8), "0.05"].join("|");
   }
 
   async function fetchCutoutData(record, coordinates = null) {
@@ -335,7 +335,7 @@
       const response = await fetch("/api/cutout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ accessUrl: record.access_url, ra, dec, size: 0.1 })
+        body: JSON.stringify({ accessUrl: record.access_url, ra, dec, size: 0.05 })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || data.error || "Cutout request failed.");
