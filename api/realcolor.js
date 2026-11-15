@@ -71,12 +71,12 @@ export default async function (req, res) {
 
     // SPHEREx cutout is 0.2 degrees = 720 arcsec. PS1 stacks are
     // approximately 0.25 arcsec/pixel, so request ~2880 pixels and
-    // render a 512-pixel JPEG preview of the same sky footprint.
+    // render a 768-pixel JPEG preview of the same sky footprint.
     const cutoutUrl = new URL(PS1_CUTCUT);
     cutoutUrl.searchParams.set("ra", String(ra));
     cutoutUrl.searchParams.set("dec", String(dec));
     cutoutUrl.searchParams.set("size", "2880");
-    cutoutUrl.searchParams.set("output_size", "512");
+    cutoutUrl.searchParams.set("output_size", "768");
     cutoutUrl.searchParams.set("format", "jpg");
     cutoutUrl.searchParams.set("red", i);
     cutoutUrl.searchParams.set("green", r);
@@ -103,8 +103,8 @@ export default async function (req, res) {
       source: "Pan-STARRS1 3PI stacked g/r/i images via STScI MAST",
       filters: { red: "i", green: "r", blue: "g" },
       fieldOfViewDegrees: 0.2,
-      width: 512,
-      height: 512,
+      width: 768,
+      height: 768,
       imageDataUrl: "data:image/jpeg;base64," + bytesToBase64(imageBytes)
     });
   } catch (error) {
