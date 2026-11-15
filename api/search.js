@@ -5,7 +5,7 @@ const SIA_ENDPOINT = "https://irsa.ipac.caltech.edu/SIA";
 const COLLECTIONS = {
   wide: ["spherex_dr1", "spherex_qr3"],
   deep: ["spherex_dr1_deep", "spherex_qr3_deep"],
-  all: ["spherex_dr1", "spherex_dr1_deep", "spherex_dr1_cube", "spherex_qr3", "spherex_qr3_deep"]
+  all: ["spherex_dr1", "spherex_dr1_deep", "spherex_qr3", "spherex_qr3_deep"]
 };
 
 function xmlDecode(value) {
@@ -65,8 +65,7 @@ function normalizeCollections(value) {
   if (value === "spherex_qr3") return ["spherex_qr3"];
   if (value === "spherex_dr1_deep") return ["spherex_dr1_deep"];
   if (value === "spherex_qr3_deep") return ["spherex_qr3_deep"];
-  if (value === "spherex_dr1_cube") return ["spherex_dr1_cube"];
-  throw new Error("Unsupported collection selection.");
+  throw new Error("Unsupported collection selection. The All-Sky Cube is not yet supported by the 2D FITS viewer.");
 }
 
 function validIsoDate(value, field) {
@@ -86,8 +85,20 @@ async function queryCollection(collection, ra, dec, radius, filters) {
 
   if (filters.startDate || filters.endDate) {
     // IRSA SIA2 TIME is an MJD interval, not an ISO-8601 interval.
-    const startMjd = filters.startDate == null ? "-Inf" : String(Date.parse(filters.startDate) / 86400000 + 40587);
-    const endMjd = filters.endDate == null ? "+Inf" : String(Date.parse(filters.endDate) / 86400000 + 40587);
+    const startMjd = filters.startDate == null
+      ? "-Inf"
+      : String(Date.parse(filters.startDate) / 86400000 + 40587);
+    // A date-only end value means the whole selected UTC calendar day.
+    // Convert it to the following midnight so observations later that day
+    // are not accidentally excluded by a zero-width end boundary.
+    const endDateMs = filters.endDate == null ? null : Date.parse(filters.endDate);
+    const endIsDateOnly = typeof filters.endDate === "string" && /^\d{4}-\d{2}-\d{2}$/.test(filters.endDate);
+    const inclusiveEndMs = endDateMs == null
+      ? null
+      : endDateMs + (endIsDateOnly ? 86400000 : 0);
+    const endMjd = inclusiveEndMs == null
+      ? "+Inf"
+      : String(inclusiveEndMs / 86400000 + 40587);
     url.searchParams.set("TIME", startMjd + " " + endMjd);
   }
   if (filters.wavelengthMin != null || filters.wavelengthMax != null) {
@@ -98,15 +109,17 @@ async function queryCollection(collection, ra, dec, radius, filters) {
   }
 
   let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     try {
       const response = await fetch(url.toString(), {
         headers: { Accept: "application/x-votable+xml, text/xml" }
       });
       const responseText = await response.text();
       if (!response.ok) {
-        throw new Error("IRSA HTTP " + response.status + " (" + collection + "): " +
+        const error = new Error("IRSA HTTP " + response.status + " (" + collection + "): " +
           responseText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 220));
+        error.retryable = [429, 502, 503, 504].includes(response.status);
+        throw error;
       }
       if (responseText.trim().startsWith("{")) {
         const parsed = JSON.parse(responseText);
@@ -117,7 +130,10 @@ async function queryCollection(collection, ra, dec, radius, filters) {
       return parseVOTable(responseText, collection);
     } catch (error) {
       lastError = error;
-      if (attempt === 0) await new Promise(resolve => setTimeout(resolve, 500));
+      const transient = error?.retryable === true ||
+        (error?.retryable === undefined && !(error?.message || "").startsWith("IRSA HTTP "));
+      if (!transient || attempt === 2) break;
+      await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 600 : 1500));
     }
   }
   throw lastError || new Error("Unknown IRSA query failure.");
@@ -181,7 +197,7 @@ export default async function (req, res) {
   return res.json({
     source: "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx SIA2",
     endpoint: SIA_ENDPOINT,
-    coordinates: { ra, dec, radius_deg: radius, frame: "ICRS/J2000" },
+    coordinates: { ra, dec, radius_deg: radius, frame: "ICRS", coordinate_epoch: "input coordinates; target presets are propagated to J2026.0" },
     filters: {
       start_date: startDate,
       end_date: endDate,
