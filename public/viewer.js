@@ -21,6 +21,7 @@
   let lastX = 0;
   let lastY = 0;
   let loadSequence = 0;
+  let previewSequence = 0;
 
   const rad = Math.PI / 180;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -304,6 +305,52 @@
     }
   }
 
+  function drawTemporaryPreview(image, token) {
+    if (token !== previewSequence || current) return;
+    const cw = canvas.width, ch = canvas.height;
+    const scale = Math.min(cw / image.naturalWidth, ch / image.naturalHeight);
+    const w = image.naturalWidth * scale, h = image.naturalHeight * scale;
+    ctx.clearRect(0, 0, cw, ch);
+    ctx.fillStyle = "#050a12";
+    ctx.fillRect(0, 0, cw, ch);
+    ctx.drawImage(image, (cw - w) / 2, (ch - h) / 2, w, h);
+    ctx.fillStyle = "rgba(4,12,24,.88)";
+    ctx.fillRect(8, 8, Math.min(cw - 16, 430), 25);
+    ctx.fillStyle = "#ffd18a";
+    ctx.font = "11px ui-monospace, monospace";
+    ctx.fillText("TEMPORARY PAN-STARRS REFERENCE · LOADING SPHEREx FITS", 15, 25);
+  }
+
+  async function showTemporaryPreview(coordinates, token) {
+    const key = coordinates.ra.toFixed(8) + "|" + coordinates.dec.toFixed(8);
+    if (realColorCache.has(key)) {
+      drawTemporaryPreview(realColorCache.get(key), token);
+      return;
+    }
+    try {
+      const response = await fetch("/api/realcolor", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(coordinates),
+        signal: AbortSignal.timeout(12000)
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.detail || data.error || "Preview unavailable");
+      const image = new Image();
+      await new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = () => reject(new Error("Preview image could not be decoded"));
+        image.src = data.imageDataUrl;
+      });
+      realColorCache.set(key, image);
+      while (realColorCache.size > 4) realColorCache.delete(realColorCache.keys().next().value);
+      drawTemporaryPreview(image, token);
+    } catch (error) {
+      // The scientific FITS request continues independently if no preview is available.
+      console.info("Temporary sky preview unavailable:", error?.message || error);
+    }
+  }
+
   function resizeCanvas() {
     const width = Math.max(320, canvas.clientWidth);
     const height = 430;
@@ -401,6 +448,13 @@
     ctx.fillStyle = "#8faac2";
     ctx.font = "14px ui-monospace, monospace";
     ctx.fillText("Loading selected SPHEREx observation…", 18, 30);
+    currentCoordinates = { ra, dec };
+    if (displayModeSelect.value !== "real-colour") {
+      const previewToken = ++previewSequence;
+      showTemporaryPreview({ ra, dec }, previewToken);
+    } else {
+      previewSequence++;
+    }
 
     try {
       const data = await fetchCutoutData({ access_url: accessUrl }, { ra, dec });
