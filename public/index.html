@@ -88,12 +88,12 @@ input,select{width:100%;background:#081221;border:1px solid #30445f;border-radiu
 </div>
 <div class="viewer-canvas-wrap"><canvas id="fits-canvas" aria-label="SPHEREx FITS image cutout"></canvas></div>
 <div class="viewer-meta" id="fits-meta"></div>
-<p class="hint">The red cross marks the searched ICRS coordinate. SPHEREx false colour visualizes infrared detector intensity; Pan-STARRS real sky colour is a separate, static stacked visible-light g/r/i survey reference. It does not change between SPHEREx epochs and cannot show epoch-to-epoch motion. It is not SPHEREx data, and coverage is not available everywhere.</p>
+<p class="hint">The red cross marks the target's ICRS position at the selected observation epoch when a verified proper-motion model is available; otherwise it marks the searched coordinate. Barnard's Star uses linear proper-motion propagation from its J2000.0 catalog position (no parallax or radial-velocity correction). SPHEREx false colour visualizes infrared detector intensity; Pan-STARRS real sky colour is a separate, static stacked visible-light g/r/i survey reference. It does not change between SPHEREx epochs and cannot show epoch-to-epoch motion. It is not SPHEREx data, and coverage is not available everywhere.</p>
 </section>
 </div>
 <div class="foot">Data source: NASA/IPAC Infrared Science Archive (IRSA), SPHEREx SIA2 and IBE. The viewer extracts real FITS image, variance, quality-flag, and zodiacal layers from archive cutouts. Full FITS products remain available through their archive links.</div>
 <script src="/viewer.js?v=27" defer></script>
-<script src="/timeline.js?v=22" defer></script>
+<script src="/timeline.js?v=23" defer></script>
 <script>
 const $=id=>document.getElementById(id);
 const collectionInputs=[...document.querySelectorAll('input[name="collection"]')];
@@ -129,7 +129,7 @@ $("search").addEventListener("click",async()=>{
   else if(waveMin!==null&&waveMax!==null&&waveMin>waveMax)validation="Minimum wavelength must be less than or equal to maximum wavelength.";
   if(validation){$("status").className="status bad";$("status").textContent=validation;return;}
   $("search").disabled=true;$("search").textContent="QUERYING IRSA…";
-  window.dispatchEvent(new CustomEvent("spherex:search-results",{detail:{rows:[],ra,dec}}));
+  window.dispatchEvent(new CustomEvent("spherex:search-results",{detail:{rows:[],ra,dec,target: $("target").value}}));
   $("status").className="status";$("status").textContent="Contacting NASA/IPAC IRSA. Large archive searches may take some time.";
   $("results").className="empty";$("results").textContent="Waiting for archive response…";$("failures").innerHTML="";
   $("count").textContent="—";$("epochs").textContent="—";$("releases").textContent="—";$("archive-menu-count").textContent="searching…";$("archive-results-menu").open=false;
@@ -140,7 +140,7 @@ $("search").addEventListener("click",async()=>{
     const data=await response.json();
     if(!response.ok)throw new Error(data.error||"Search request failed.");
     const rows=Array.isArray(data.records)?data.records:[];
-    window.dispatchEvent(new CustomEvent("spherex:search-results",{detail:{rows,ra,dec}}));
+    window.dispatchEvent(new CustomEvent("spherex:search-results",{detail:{rows,ra,dec,target: $("target").value}}));
     $("count").textContent=rows.length;$("releases").textContent=data.collections_queried??selected.length;$("archive-menu-count").textContent=rows.length+" records · expand to inspect";$("archive-results-menu").open=false;
     const dates=[...new Set(rows.map(r=>firstValue(r,["t_min","mjd_obs","mjd","date_obs","dateobs","date"])).filter(v=>v!=="—").map(String))];
     $("epochs").textContent=dates.length;
