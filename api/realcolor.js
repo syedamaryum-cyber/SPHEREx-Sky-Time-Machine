@@ -4,6 +4,15 @@ export const methods = ["POST"];
 const PS1_LIST = "https://ps1images.stsci.edu/cgi-bin/ps1filenames.py";
 const PS1_CUTCUT = "https://ps1images.stsci.edu/cgi-bin/fitscut.cgi";
 
+function bytesToBase64(bytes) {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
 function parseImageList(text) {
   const lines = String(text || "").trim().split(/\r?\n/).filter(Boolean);
   if (lines.length < 2) return [];
@@ -85,7 +94,7 @@ export default async function (req, res) {
       }
       await new Promise(resolve => setTimeout(resolve, 800));
     }
-    const imageBytes = Buffer.from(await imageResponse.arrayBuffer());
+    const imageBytes = new Uint8Array(await imageResponse.arrayBuffer());
     if (imageBytes.length < 100 || imageBytes[0] !== 0xff || imageBytes[1] !== 0xd8) {
       throw new Error("Pan-STARRS did not return a valid JPEG colour image.");
     }
@@ -96,7 +105,7 @@ export default async function (req, res) {
       fieldOfViewDegrees: 0.2,
       width: 512,
       height: 512,
-      imageDataUrl: "data:image/jpeg;base64," + imageBytes.toString("base64")
+      imageDataUrl: "data:image/jpeg;base64," + bytesToBase64(imageBytes)
     });
   } catch (error) {
     console.error("Pan-STARRS colour image failed:", error?.message || error);
