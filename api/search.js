@@ -181,6 +181,8 @@ async function queryTapFallback(ra, dec, radius, filters, requested) {
   ].join(" ");
 
   const endpoint = new URL("https://irsa.ipac.caltech.edu/TAP/sync");
+  endpoint.searchParams.set("REQUEST", "doQuery");
+  endpoint.searchParams.set("LANG", "ADQL");
   endpoint.searchParams.set("QUERY", query);
   endpoint.searchParams.set("FORMAT", "VOTABLE");
   endpoint.searchParams.set("MAXREC", "2000");
