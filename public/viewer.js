@@ -291,7 +291,7 @@
           key === currentCoordinates.ra.toFixed(8) + "|" + currentCoordinates.dec.toFixed(8)) {
         draw();
         status.className = "status good";
-        status.textContent = "Loaded Pan-STARRS1 stacked visible-light colour image (g/r/i mapped to blue/green/red). This is a separate survey image, not SPHEREx data.";
+        status.textContent = "Loaded Pan-STARRS1 stacked visible-light reference (g/r/i mapped to blue/green/red). This image is static across epochs; it is not time-resolved SPHEREx data.";
       }
       return true;
     } catch (error) {
