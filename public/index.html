@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#080d19">
+<title>Stardust Syndicate · SPHEREx Sky Time-Machine</title>
+<style>
+:root{color-scheme:dark;--bg:#080d19;--panel:#101a2b;--line:#253650;--muted:#9aabc4;--text:#edf4ff;--cyan:#67e8f9;--violet:#b9a2ff;--green:#7ee0b0;--amber:#ffd18a}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at 78% -10%,#24365c 0,transparent 42%),var(--bg);color:var(--text);font:15px/1.55 Inter,ui-sans-serif,system-ui,sans-serif}
+header{padding:34px max(22px,calc((100vw - 1180px)/2)) 26px;border-bottom:1px solid var(--line)}.kicker{color:var(--cyan);font-size:11px;letter-spacing:.2em;font-weight:800;text-transform:uppercase}
+h1{font-size:clamp(30px,5vw,54px);line-height:1.04;letter-spacing:-.04em;margin:12px 0}.sub{max-width:760px;color:var(--muted);font-size:16px}
+main{max-width:1180px;margin:28px auto;padding:0 22px 60px;display:grid;grid-template-columns:350px 1fr;gap:20px;align-items:start}.panel{background:linear-gradient(145deg,#111d30,#0d1625);border:1px solid var(--line);border-radius:17px;padding:20px;box-shadow:0 18px 50px #0003}
+h2{font-size:17px;margin:0 0 15px}h3{font-size:13px;margin:18px 0 7px;color:#d5e3f6}
+label{display:block;color:#c4d2e6;font-size:12px;font-weight:700;margin:13px 0 6px}
+input,select{width:100%;background:#081221;border:1px solid #30445f;border-radius:9px;color:var(--text);padding:11px;font:inherit}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.primary{width:100%;margin-top:17px;padding:12px;border:0;border-radius:10px;background:linear-gradient(90deg,#4dd5e8,#9b8aff);color:#07101d;font-weight:850;cursor:pointer}.primary:disabled{opacity:.5;cursor:wait}
+.hint{font-size:11px;color:var(--muted);margin-top:10px}.status{padding:12px;border:1px solid var(--line);border-radius:10px;color:var(--muted);background:#0a1423;margin-bottom:15px;overflow-wrap:anywhere}.status.good{border-color:#28634e;color:var(--green)}.status.bad{border-color:#704a3b;color:var(--amber)}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:15px}.stat{background:#0a1423;border:1px solid var(--line);border-radius:11px;padding:12px}.stat b{display:block;font-size:22px;color:var(--cyan)}.stat span{font-size:11px;color:var(--muted)}
+.checks{display:grid;gap:7px;padding:10px;background:#0a1423;border:1px solid var(--line);border-radius:10px}.check{display:flex;align-items:flex-start;gap:9px;color:#d5e3f6;font-size:12px;margin:0;font-weight:500}.check input{width:auto;margin:3px 0 0;accent-color:#67e8f9}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:12px;min-width:680px}th,td{text-align:left;padding:10px 8px;border-bottom:1px solid #26364c;vertical-align:top;overflow-wrap:anywhere}th{color:#a9bdd8;font-size:10px;text-transform:uppercase;letter-spacing:.08em}a{color:var(--cyan)}.empty{padding:36px 15px;text-align:center;color:var(--muted);border:1px dashed #30445f;border-radius:12px}.failure{margin:10px 0;padding:10px;border:1px solid #704a3b;border-radius:9px;color:var(--amber);font-size:12px;overflow-wrap:anywhere}.view-cutout{margin-top:6px;padding:6px 9px;border:1px solid #43869b;border-radius:7px;background:#102d3a;color:#8eeeff;font:700 11px inherit;cursor:pointer}.viewer-wrap{max-width:1180px;margin:0 auto 30px;padding:0 22px}.viewer-controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:12px 0}.viewer-controls select,.viewer-controls button{width:auto;margin:0}.viewer-controls button{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:#0a1423;color:var(--text);cursor:pointer}.viewer-controls select{min-width:180px}.viewer-canvas-wrap{background:#050a12;border:1px solid var(--line);border-radius:12px;overflow:hidden}.viewer-canvas-wrap canvas{display:block;width:100%;height:430px;cursor:grab;touch-action:none}.viewer-canvas-wrap canvas:active{cursor:grabbing}.viewer-meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin-top:12px}.viewer-meta div{padding:10px;background:#0a1423;border:1px solid var(--line);border-radius:9px;min-width:0}.viewer-meta span{display:block;color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em}.viewer-meta strong{display:block;margin-top:3px;font-size:12px;overflow-wrap:anywhere}.foot{max-width:1180px;margin:-8px auto 30px;padding:0 22px;color:#8293ad;font-size:11px}
+@media(max-width:850px){main{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}}
+</style>
+</head>
+<body>
+<header><div class="kicker">Stardust Syndicate · NASA Space Apps</div><h1>SPHEREx Sky<br><span style="color:var(--cyan)">Time-Machine</span></h1><p class="sub">Explore the infrared sky through real SPHEREx spectral-image archive records. Search a position, constrain the observation period and wavelength range, and inspect archive metadata without inventing observations.</p></header>
+<main>
+<section class="panel">
+<h2>01 / Search parameters</h2>
+<label for="target">Challenge target</label>
+<select id="target">
+<option value="custom">Custom coordinates</option><option value="wise">WISE 0855</option>
+<option value="barnard">Barnard’s Star (enter coordinates)</option><option value="epsilon">Epsilon Indi B (enter coordinates)</option>
+<option value="rwaur">RW Aurigae (enter coordinates)</option><option value="rdraco">R Draconis (enter coordinates)</option>
+</select>
+<div class="grid2"><div><label for="ra">Right Ascension (deg)</label><input id="ra" type="number" step="any" value="133.795129"></div><div><label for="dec">Declination (deg)</label><input id="dec" type="number" step="any" value="-7.245147"></div></div>
+<label for="radius">Search radius (degrees)</label><input id="radius" type="number" min="0.001" max="1" step="0.005" value="0.12">
+<h3>SPHEREx collections</h3>
+<div class="checks">
+<label class="check"><input type="checkbox" name="collection" value="spherex_dr1" checked> DR1 — Wide Survey</label>
+<label class="check"><input type="checkbox" name="collection" value="spherex_dr1_deep" checked> DR1 — Deep Survey</label>
+<label class="check"><input type="checkbox" name="collection" value="spherex_qr3" checked> QR3 — Wide Survey</label>
+<label class="check"><input type="checkbox" name="collection" value="spherex_qr3_deep" checked> QR3 — Deep Survey</label>
+<label class="check"><input type="checkbox" name="collection" value="spherex_dr1_cube"> DR1 — All-Sky Cube FITS</label>
+</div>
+<h3>Observation date range (optional)</h3>
+<div class="grid2"><div><label for="startDate">Start date (UTC)</label><input id="startDate" type="date"></div><div><label for="endDate">End date (UTC)</label><input id="endDate" type="date"></div></div>
+<h3>Wavelength range (optional)</h3>
+<div class="grid2"><div><label for="waveMin">Minimum (µm)</label><input id="waveMin" type="number" min="0" step="any" placeholder="e.g. 1.0"></div><div><label for="waveMax">Maximum (µm)</label><input id="waveMax" type="number" min="0" step="any" placeholder="e.g. 2.4"></div></div>
+<button class="primary" id="search">SEARCH LIVE SPHEREX ARCHIVE ↗</button>
+<div class="hint">Coordinates are J2000/ICRS. Choose collections explicitly. Dates and wavelengths are optional. The DR1 cube collection is a separate all-sky product; select it when needed. Target coordinates other than WISE 0855 must be entered manually.</div>
+</section>
+<section class="panel">
+<h2>02 / Archive results</h2>
+<div class="status" id="status">Ready. Select collections, enter coordinates, and search the live archive.</div>
+<div class="stats"><div class="stat"><b id="count">—</b><span>Image records</span></div><div class="stat"><b id="epochs">—</b><span>Distinct time values*</span></div><div class="stat"><b id="releases">—</b><span>Collections queried</span></div></div>
+<div id="failures"></div>
+<div id="results" class="empty">Your real SPHEREx archive results will appear here.</div>
+<p class="hint">*Distinct time values are estimated from returned metadata. Multiple detector images may belong to one observing epoch. A failed archive query is not the same as zero observations.</p>
+</section>
+</main>
+<div class="viewer-wrap">
+<section class="panel" id="fits-viewer">
+<h2>03 / Real SPHEREx FITS viewer</h2>
+<div class="status" id="viewer-status">Choose “View FITS cutout” on an archive result to load its real image data here.</div>
+<div class="viewer-controls">
+<label for="fits-display-mode" style="margin:0">Display mode</label>
+<select id="fits-display-mode" disabled>
+<option value="false-colour">SPHEREx false colour</option>
+<option value="real-colour">Pan-STARRS real sky colour</option>
+</select>
+<label for="fits-layer" style="margin:0">Scientific layer</label>
+<select id="fits-layer" disabled><option value="image">Science image</option></select>
+<button type="button" id="fits-reset">Reset zoom / position</button>
+<span class="hint">Scroll to zoom · drag to pan</span>
+</div>
+<div class="timeline-panel" id="time-machine" hidden>
+  <div class="timeline-heading"><div><strong>Observation timeline</strong><span id="timeline-summary">Waiting for archive records</span></div><span class="timeline-index" id="timeline-index">0 / 0</span></div>
+  <div class="timeline-actions">
+    <button type="button" id="timeline-prev" disabled>← Previous</button>
+    <button type="button" id="timeline-play" disabled>▶ Play</button>
+    <button type="button" id="timeline-next" disabled>Next →</button>
+    <label for="timeline-product">Product</label>
+    <select id="timeline-product" disabled></select>
+  </div>
+  <input id="timeline-range" type="range" min="0" max="0" value="0" step="1" disabled aria-label="Select observation epoch">
+  <div class="timeline-caption" id="timeline-caption">Search the archive to build a chronological sequence.</div>
+  <div class="timeline-note">Each step loads a real archive FITS cutout on demand. Products sharing an observation ID are grouped into one observing epoch; use Product to switch wavelength products within that epoch.</div>
+</div>
+<div class="viewer-canvas-wrap"><canvas id="fits-canvas" aria-label="SPHEREx FITS image cutout"></canvas></div>
+<div class="viewer-meta" id="fits-meta"></div>
+<p class="hint">The red cross marks the searched ICRS coordinate. SPHEREx false colour visualizes infrared detector intensity; Pan-STARRS real sky colour is a separate visible-light g/r/i survey composite at the same sky position and field of view. The survey image is not SPHEREx data, and coverage is not available everywhere.</p>
+</section>
+</div>
+<div class="foot">Data source: NASA/IPAC Infrared Science Archive (IRSA), SPHEREx SIA2 and IBE. The viewer extracts real FITS image, variance, quality-flag, and zodiacal layers from archive cutouts. Full FITS products remain available through their archive links.</div>
+<script src="/viewer.js?v=14" defer></script>
+<script src="/timeline.js?v=14" defer></script>
+<script>
+const $=id=>document.getElementById(id);
+const collectionInputs=[...document.querySelectorAll('input[name="collection"]')];
+$("target").addEventListener("change",e=>{
+  if(e.target.value==="wise"){$("ra").value="133.795129";$("dec").value="-7.245147";}
+  else if(e.target.value!=="custom"){$("ra").value="";$("dec").value="";}
+});
+function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
+function firstValue(row,keys){for(const key of keys){if(row[key]!==undefined&&row[key]!==null&&row[key]!=="")return row[key];}return "—";}
+function safeLink(value,label){
+  if(typeof value!=="string"||!/^https?:\/\//i.test(value))return "—";
+  return '<a target="_blank" rel="noopener noreferrer" href="'+esc(value)+'">'+esc(label)+'</a>';
+}
+function renderFailures(failures){
+  $("failures").innerHTML=(failures||[]).map(f=>'<div class="failure"><strong>'+esc(f.collection)+'</strong>: '+esc(f.error)+'</div>').join("");
+}
+$("search").addEventListener("click",async()=>{
+  const ra=Number($("ra").value),dec=Number($("dec").value),radius=Number($("radius").value);
+  const selected=collectionInputs.filter(x=>x.checked).map(x=>x.value);
+  const startDate=$("startDate").value||null,endDate=$("endDate").value||null;
+  const waveMin=$("waveMin").value===""?null:Number($("waveMin").value);
+  const waveMax=$("waveMax").value===""?null:Number($("waveMax").value);
+  let validation="";
+  if(!Number.isFinite(ra)||ra<0||ra>=360||!Number.isFinite(dec)||dec< -90||dec>90||!Number.isFinite(radius)||radius<=0||radius>1)validation="Enter valid coordinates (RA 0–360°, Dec −90–90°) and a radius greater than 0 and at most 1°.";
+  else if(!selected.length)validation="Select at least one SPHEREx collection.";
+  else if(startDate&&endDate&&startDate>endDate)validation="The start date must be earlier than or equal to the end date.";
+  else if(waveMin!==null&&(!Number.isFinite(waveMin)||waveMin<=0)||waveMax!==null&&(!Number.isFinite(waveMax)||waveMax<=0))validation="Wavelength limits must be positive numbers in microns.";
+  else if(waveMin!==null&&waveMax!==null&&waveMin>waveMax)validation="Minimum wavelength must be less than or equal to maximum wavelength.";
+  if(validation){$("status").className="status bad";$("status").textContent=validation;return;}
+  $("search").disabled=true;$("search").textContent="QUERYING IRSA…";
+  window.dispatchEvent(new CustomEvent("spherex:search-results",{detail:{rows:[],ra,dec}}));
+  $("status").className="status";$("status").textContent="Contacting NASA/IPAC IRSA. Large archive searches may take some time.";
+  $("results").className="empty";$("results").textContent="Waiting for archive response…";$("failures").innerHTML="";
+  $("count").textContent="—";$("epochs").textContent="—";$("releases").textContent="—";
+  try{
+    const response=await fetch("/api/search",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+      ra,dec,radius,collections:selected,startDate,endDate,wavelengthMin:waveMin,wavelengthMax:waveMax
+    })});
+    const data=await response.json();
+    if(!response.ok)throw new Error(data.error||"Search request failed.");
+    const rows=Array.isArray(data.records)?data.records:[];
+    window.dispatchEvent(new CustomEvent("spherex:search-results",{detail:{rows,ra,dec}}));
+    $("count").textContent=rows.length;$("releases").textContent=data.collections_queried??selected.length;
+    const dates=[...new Set(rows.map(r=>firstValue(r,["t_min","mjd_obs","mjd","date_obs","dateobs","date"])).filter(v=>v!=="—").map(String))];
+    $("epochs").textContent=dates.length;
+    renderFailures(data.failures);
+    if(rows.length){
+      $("status").className="status "+(data.failures?.length?"bad":"good");
+      $("status").textContent=data.failures?.length
+        ?"Partial archive response: "+rows.length+" record(s) returned; "+data.failures.length+" collection(s) failed. See errors above."
+        :"Archive query returned "+rows.length+" record(s).";
+      $("results").className="tablewrap";
+      $("results").innerHTML='<table><thead><tr><th>Collection</th><th>Observation ID</th><th>Instrument / band</th><th>Start (MJD)</th><th>End (MJD)</th><th>Wavelength</th><th>Data product</th></tr></thead><tbody>'+
+        rows.map(r=>{
+          const id=firstValue(r,["obs_id","obs_publisher_did","obs_collection","obs_title"]);
+          const instrument=firstValue(r,["energy_bandpassname","instrument_name","instrument","detector","band"]);
+          const start=firstValue(r,["t_min","mjd_obs","mjd"]);
+          const end=firstValue(r,["t_max"]);
+          const wavelength=firstValue(r,["em_min","em_max"]);
+          const wave=(Number.isFinite(Number(r.em_min))&&Number.isFinite(Number(r.em_max)))?(Number(r.em_min)*1e6).toFixed(3)+" – "+(Number(r.em_max)*1e6).toFixed(3)+" μm":"—";
+          const viewButton=typeof r.access_url==="string"&&/^https:\/\//i.test(r.access_url)?'<button class="view-cutout" data-access-url="'+esc(r.access_url)+'">View FITS cutout</button>':"—";
+          return "<tr><td>"+esc(r.collection)+"</td><td>"+esc(id)+"</td><td>"+esc(instrument)+"</td><td>"+esc(start)+"</td><td>"+esc(end)+"</td><td>"+wave+"</td><td>"+safeLink(r.access_url,"Open FITS / product")+"<br>"+viewButton+(r.cloud_access?"<br>"+esc(typeof r.cloud_access==="string"?r.cloud_access:JSON.stringify(r.cloud_access)):"")+"</td></tr>";
+        }).join("")+"</tbody></table>";
+    }else{
+      $("status").className="status "+(data.failures?.length?"bad":"");
+      $("status").textContent=data.message||"No matching records were returned.";
+      $("results").className="empty";
+      $("results").textContent=data.failures?.length
+        ?"The archive did not return usable records because one or more collection requests failed. This is not evidence that the target has no observations."
+        :"IRSA returned no matching records for these search constraints. Try a wider radius or a different date range.";
+    }
+  }catch(error){
+    $("status").className="status bad";$("status").textContent="Could not complete the archive query: "+error.message;
+    $("results").className="empty";$("results").textContent="No data have been fabricated or substituted. Check the archive connection and try again.";
+  }finally{$("search").disabled=false;$("search").textContent="SEARCH LIVE SPHEREX ARCHIVE ↗";}
+});
+</script>
+</body></html>
