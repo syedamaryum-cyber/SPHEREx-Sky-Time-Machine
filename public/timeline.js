@@ -222,6 +222,20 @@
     return false;
   }
 
+  async function advance(token) {
+    if (!playing || token !== playbackToken) return;
+    const nextIndex = (activeIndex + 1) % epochs.length;
+    const loaded = await selectEpoch(nextIndex, null, 1);
+    if (!playing || token !== playbackToken) return;
+    if (!loaded) {
+      stopPlayback();
+      caption.dataset.state = "error";
+      caption.textContent = "Playback stopped: no loadable FITS images were found in this timeline.";
+      return;
+    }
+    window.setTimeout(() => advance(token), 900);
+  }
+
   function setTimeline(rows, ra, dec) {
     stopPlayback();
     selectionToken++;
