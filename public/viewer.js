@@ -494,6 +494,11 @@
       return true;
     } catch (error) {
       if (thisLoad !== loadSequence) return false;
+      if (typeof options.onError === "function") {
+        try { options.onError(error); } catch (callbackError) {
+          console.warn("Timeline error callback failed:", callbackError);
+        }
+      }
       if (!options.quiet) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         ctx.fillStyle = "#050a12";
