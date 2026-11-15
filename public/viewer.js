@@ -76,6 +76,25 @@
     return sorted[Math.floor((sorted.length - 1) * fraction)];
   }
 
+  function samplePercentiles(values, limit = 20000) {
+    const sample = [];
+    const stride = Math.max(1, Math.ceil(values.length / limit));
+    for (let i = 0; i < values.length; i += stride) {
+      const value = values[i];
+      if (Number.isFinite(value)) sample.push(value);
+    }
+    // Sparse/mostly-NaN layers need a fallback scan so the sample is not empty.
+    if (sample.length < 1000) {
+      sample.length = 0;
+      for (let i = 0; i < values.length && sample.length < limit; i++) {
+        const value = values[i];
+        if (Number.isFinite(value)) sample.push(value);
+      }
+    }
+    sample.sort((a, b) => a - b);
+    return sample;
+  }
+
   function makeLayerImage() {
     const width = current.metadata.width;
     const height = current.metadata.height;
@@ -83,9 +102,11 @@
     if (!current.renderedLayers) current.renderedLayers = new Map();
     if (current.renderedLayers.has(key)) return current.renderedLayers.get(key);
     const values = current.layers[key] || current.layers.image;
-    const finite = values.filter(v => Number.isFinite(v)).sort((a, b) => a - b);
-    const low = percentile(finite, key === "image" ? 0.005 : 0.01);
-    const high = percentile(finite, key === "image" ? 0.995 : 0.99);
+    // Approximate robust display limits from at most 20k samples instead of
+    // sorting every detector pixel. The original FITS values are never changed.
+    const sample = key === "flags" ? [] : samplePercentiles(values);
+    const low = key === "flags" ? 0 : percentile(sample, key === "image" ? 0.005 : 0.01);
+    const high = key === "flags" ? 1 : percentile(sample, key === "image" ? 0.995 : 0.99);
     const range = high > low ? high - low : 1;
     const pixels = new ImageData(width, height);
 
