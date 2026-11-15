@@ -18,6 +18,11 @@
     .timeline-caption{color:#d5e3f6;font:12px ui-monospace,monospace;overflow-wrap:anywhere}
     .timeline-caption[data-state="loading"]{color:#ffd18a}
     .timeline-caption[data-state="error"]{color:#ffb18b}
+    .epoch-data{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:8px;margin-top:12px}
+    .epoch-data div{padding:10px;background:#081522;border:1px solid #29445c;border-radius:9px;min-width:0}
+    .epoch-data span{display:block;color:#8faac2;font-size:10px;text-transform:uppercase;letter-spacing:.07em}
+    .epoch-data strong{display:block;margin-top:3px;color:#e4f5ff;font-size:12px;overflow-wrap:anywhere}
+    .epoch-data .wide{grid-column:1/-1}
     .timeline-note{margin-top:8px;color:#819bb4;font-size:10px;line-height:1.45}
     @media(max-width:600px){.timeline-actions label{margin-left:0}.timeline-actions select{flex:1;min-width:150px}}
   `;
@@ -32,6 +37,13 @@
   const summary = document.getElementById("timeline-summary");
   const indexLabel = document.getElementById("timeline-index");
   const caption = document.getElementById("timeline-caption");
+  const targetData = document.createElement("div");
+  targetData.className = "epoch-data";
+  targetData.id = "epoch-target-data";
+  targetData.setAttribute("aria-live", "polite");
+  caption.insertAdjacentElement("afterend", targetData);
+  let targetKey = "custom";
+  let properMotionModel = null;
   let epochs = [];
   let allEpochs = [];
   let activeIndex = 0;
@@ -61,6 +73,78 @@
     return Number.isNaN(date.getTime())
       ? "UTC time unavailable"
       : date.toISOString().replace("T", " ").replace(/\.\d{3}Z$/, " UTC");
+  }
+
+  function julianYearFromMjd(mjd) {
+    return 2000 + (mjd - 51544.5) / 365.25;
+  }
+
+  // SIMBAD-style proper motion: pmRA is mu_alpha*cos(dec), in mas/year.
+  // Barnard's Star catalog reference position is ICRS at J2000.0.
+  const TARGET_MODELS = {
+    barnard: {
+      name: "Barnard's Star",
+      ra0: 269.452077,
+      dec0: 4.693365,
+      pmRa: -801.551,
+      pmDec: 10362.394,
+      referenceEpoch: 2000.0,
+      searchEpoch: 2026.0,
+      searchRa: 269.446269,
+      searchDec: 4.768204
+    }
+  };
+
+  function positionForEpoch(mjd) {
+    const year = julianYearFromMjd(mjd);
+    if (!properMotionModel) {
+      return {
+        year,
+        ra: searchCoordinates.ra,
+        dec: searchCoordinates.dec,
+        shiftArcsec: null,
+        propagated: false
+      };
+    }
+    const model = properMotionModel;
+    const dt = year - model.referenceEpoch;
+    const dec = model.dec0 + model.pmDec * dt / 3600000;
+    const ra = ((model.ra0 + model.pmRa * dt /
+      (3600000 * Math.cos(model.dec0 * Math.PI / 180))) % 360 + 360) % 360;
+    const shiftYears = year - model.searchEpoch;
+    const shiftArcsec = Math.hypot(model.pmRa * shiftYears, model.pmDec * shiftYears) / 1000;
+    return { year, ra, dec, shiftArcsec, propagated: true };
+  }
+
+  function renderEpochData(epoch, record, position) {
+    const band = record?.energy_bandpassname || record?.band || record?.instrument_name || "Not supplied";
+    const wavelength = number(record?.em_min) !== null && number(record?.em_max) !== null
+      ? (Number(record.em_min) * 1e6).toFixed(3) + "–" + (Number(record.em_max) * 1e6).toFixed(3) + " μm"
+      : "Not supplied";
+    const displacement = position.propagated
+      ? position.shiftArcsec.toFixed(3) + " arcsec from 2026.0"
+      : "Not calculated · no verified motion model";
+    const properMotion = properMotionModel
+      ? "μα cos δ " + properMotionModel.pmRa.toFixed(3) + " · μδ " + properMotionModel.pmDec.toFixed(3) + " mas/yr"
+      : "Not configured for this target";
+    const cells = [
+      ["Observation epoch", "J" + position.year.toFixed(4)],
+      ["Observation date (UTC)", utcFromMjd(epoch.mjd)],
+      ["MJD", Number(epoch.mjd).toFixed(6)],
+      ["Collection", record?.collection || "Not supplied"],
+      ["Right Ascension (ICRS)", position.ra.toFixed(8) + "°"],
+      ["Declination (ICRS)", (position.dec >= 0 ? "+" : "") + position.dec.toFixed(8) + "°"],
+      ["Position shift", displacement],
+      ["Spectral band", band],
+      ["Wavelength range", wavelength],
+      ["Observation ID", epoch.observationId || "Not supplied"],
+      ["Proper motion", properMotion]
+    ];
+    targetData.innerHTML = cells.map(([label, value]) =>
+      '<div><span>' + label + '</span><strong>' +
+      String(value).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])) +
+      '</strong></div>'
+    ).join("");
   }
 
   function stopPlayback() {
@@ -125,10 +209,11 @@
       const epoch = epochs[index + offset];
       if (!epoch) continue;
       const record = epoch?.products?.[0];
-      const key = record?.access_url + "|" + searchCoordinates.ra + "|" + searchCoordinates.dec;
+      const coordinates = epoch ? positionForEpoch(epoch.mjd) : searchCoordinates;
+      const key = record?.access_url + "|" + coordinates.ra + "|" + coordinates.dec;
       if (record && record.access_url && !queuedPreloads.has(key)) {
         queuedPreloads.add(key);
-        preloadQueue.push({ record, key, coordinates: { ...searchCoordinates } });
+        preloadQueue.push({ record, key, coordinates: { ra: coordinates.ra, dec: coordinates.dec } });
       }
     }
     runPreloadWorkers();
@@ -201,10 +286,15 @@
         if (token !== selectionToken) return false;
         activeProduct = candidate;
         productSelect.value = String(candidate);
-        loaded = await window.SpherexViewer.loadRecord(epoch.products[candidate], searchCoordinates, { quiet: true });
+        const epochPosition = positionForEpoch(epoch.mjd);
+        loaded = await window.SpherexViewer.loadRecord(epoch.products[candidate], {
+          ra: epochPosition.ra,
+          dec: epochPosition.dec
+        }, { quiet: true });
         if (token !== selectionToken) return false;
         if (loaded) {
           loadedProduct = candidate;
+          renderEpochData(epoch, epoch.products[candidate], epochPosition);
           break;
         }
       }
@@ -251,7 +341,7 @@
     }
   }
 
-  function setTimeline(rows, ra, dec) {
+  function setTimeline(rows, ra, dec, selectedTarget = "custom") {
     stopPlayback();
     selectionToken++;
     preloadQueue.length = 0;
@@ -260,6 +350,14 @@
     modeSelect.value = "highlights";
     epochs = chooseSequence(allEpochs, "highlights");
     searchCoordinates = { ra, dec };
+    targetKey = selectedTarget;
+    const model = TARGET_MODELS[targetKey];
+    properMotionModel = model &&
+      Math.abs(ra - model.searchRa) < 0.0001 &&
+      Math.abs(dec - model.searchDec) < 0.0001
+        ? model
+        : null;
+    targetData.innerHTML = "";
     activeIndex = 0;
     activeProduct = 0;
 
@@ -328,6 +426,6 @@
 
   window.addEventListener("spherex:search-results", event => {
     const detail = event.detail || {};
-    setTimeline(detail.rows, detail.ra, detail.dec);
+    setTimeline(detail.rows, detail.ra, detail.dec, detail.target);
   });
 })();
