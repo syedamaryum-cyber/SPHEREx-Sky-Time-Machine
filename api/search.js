@@ -18,12 +18,12 @@ async function fetchIrsaWithDiagnostics(url) {
     });
   } catch (cause) {
     const elapsed = Date.now() - startedAt;
-    const detail = String(cause?.message || cause).replace(/\\s+/g, " ").slice(0, 240);
+    const detail = String(cause?.message || cause).replace(/\s+/g, " ").slice(0, 240);
     throw new Error("IRSA network fetch failed (" + elapsed + "ms) | cause=" + detail);
   }
 
   if (!response.ok) {
-    const rawSnippet = (await response.text()).replace(/\\s+/g, " ").slice(0, 300);
+    const rawSnippet = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
     const serverHeader = response.headers.get("server") || "unknown";
     const cfRay = response.headers.get("cf-ray") || "none";
     const contentType = response.headers.get("content-type") || "unknown";
