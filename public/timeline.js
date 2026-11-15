@@ -128,7 +128,9 @@
       ? "μα cos δ " + properMotionModel.pmRa.toFixed(3) + " · μδ " + properMotionModel.pmDec.toFixed(3) + " mas/yr"
       : "Not configured for this target";
     const cells = [
-      ["Observation epoch", "J" + position.year.toFixed(4)],
+      ["Target", properMotionModel ? properMotionModel.name : targetKey],
+      ["Motion model", position.propagated ? "Active · linear proper-motion propagation" : "Inactive · fixed search coordinates"],
+      ["Observation epoch", "J" + position.year.toFixed(6)],
       ["Observation date (UTC)", utcFromMjd(epoch.mjd)],
       ["MJD", Number(epoch.mjd).toFixed(6)],
       ["Collection", record?.collection || "Not supplied"],
@@ -259,6 +261,10 @@
       const requestedProduct = offset === 0 && productIndex !== null && productIndex !== undefined
         ? Math.max(0, Math.min(epoch.products.length - 1, productIndex))
         : (matchingProduct >= 0 ? matchingProduct : 0);
+      // Refresh the epoch readout immediately on selection, not only after
+      // the FITS request finishes. This keeps the UI synchronized during loading.
+      const selectedEpochPosition = positionForEpoch(epoch.mjd);
+      renderEpochData(epoch, epoch.products[requestedProduct], selectedEpochPosition);
 
       const productOrder = [
         requestedProduct,
@@ -352,9 +358,11 @@
     searchCoordinates = { ra, dec };
     targetKey = selectedTarget;
     const model = TARGET_MODELS[targetKey];
+    // The preset identity is the primary selector. Allow harmless
+    // coordinate rounding while rejecting manually changed coordinates.
     properMotionModel = model &&
-      Math.abs(ra - model.searchRa) < 0.0001 &&
-      Math.abs(dec - model.searchDec) < 0.0001
+      Math.abs(ra - model.searchRa) < 0.01 &&
+      Math.abs(dec - model.searchDec) < 0.01
         ? model
         : null;
     targetData.innerHTML = "";
