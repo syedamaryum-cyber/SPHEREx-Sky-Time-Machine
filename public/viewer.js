@@ -80,6 +80,8 @@
     const width = current.metadata.width;
     const height = current.metadata.height;
     const key = layerSelect.value;
+    if (!current.renderedLayers) current.renderedLayers = new Map();
+    if (current.renderedLayers.has(key)) return current.renderedLayers.get(key);
     const values = current.layers[key] || current.layers.image;
     const finite = values.filter(v => Number.isFinite(v)).sort((a, b) => a - b);
     const low = percentile(finite, key === "image" ? 0.005 : 0.01);
@@ -156,6 +158,7 @@
     offscreen.width = width;
     offscreen.height = height;
     offscreen.getContext("2d").putImageData(pixels, 0, 0);
+    current.renderedLayers.set(key, offscreen);
     return offscreen;
   }
 
@@ -385,7 +388,8 @@
       current = {
         metadata: data.metadata,
         layers: data.layers,
-        targetPixel: pixel
+        targetPixel: pixel,
+        renderedLayers: new Map()
       };
       currentCoordinates = { ra, dec };
       displayModeSelect.disabled = false;
