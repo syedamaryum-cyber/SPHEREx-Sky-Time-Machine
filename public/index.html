@@ -190,10 +190,12 @@ $("search").addEventListener("click",async()=>{
     $("epochs").textContent=dates.length;
     renderFailures(data.failures);
     if(rows.length){
-      $("status").className="status "+(data.failures?.length?"bad":"good");
-      $("status").textContent=data.failures?.length
-        ?"Partial archive response: "+rows.length+" record(s) returned; "+data.failures.length+" collection(s) failed. See errors above."
-        :"Archive query returned "+rows.length+" record(s).";
+      $("status").className="status "+(data.fallback_used?"good":(data.failures?.length?"bad":"good"));
+      $("status").textContent=data.fallback_used
+        ?"SIA2 was unavailable; IRSA TAP fallback retrieved "+rows.length+" real SPHEREx record(s). SIA2 errors are listed below."
+        :(data.failures?.length
+          ?"Partial archive response: "+rows.length+" record(s) returned; "+data.failures.length+" collection(s) failed. See errors above."
+          :"Archive query returned "+rows.length+" record(s).");
       $("results").className="tablewrap";
       $("results").innerHTML='<table><thead><tr><th>Collection</th><th>Observation ID</th><th>Instrument / band</th><th>Start (MJD)</th><th>End (MJD)</th><th>Wavelength</th><th>Data product</th></tr></thead><tbody>'+
         rows.map(r=>{
