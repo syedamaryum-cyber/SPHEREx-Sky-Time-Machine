@@ -21,7 +21,6 @@
   let lastX = 0;
   let lastY = 0;
   let loadSequence = 0;
-  let previewSequence = 0;
 
   const rad = Math.PI / 180;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
@@ -77,37 +76,14 @@
     return sorted[Math.floor((sorted.length - 1) * fraction)];
   }
 
-  function samplePercentiles(values, limit = 20000) {
-    const sample = [];
-    const stride = Math.max(1, Math.ceil(values.length / limit));
-    for (let i = 0; i < values.length; i += stride) {
-      const value = values[i];
-      if (Number.isFinite(value)) sample.push(value);
-    }
-    // Sparse/mostly-NaN layers need a fallback scan so the sample is not empty.
-    if (sample.length < 1000) {
-      sample.length = 0;
-      for (let i = 0; i < values.length && sample.length < limit; i++) {
-        const value = values[i];
-        if (Number.isFinite(value)) sample.push(value);
-      }
-    }
-    sample.sort((a, b) => a - b);
-    return sample;
-  }
-
   function makeLayerImage() {
     const width = current.metadata.width;
     const height = current.metadata.height;
     const key = layerSelect.value;
-    if (!current.renderedLayers) current.renderedLayers = new Map();
-    if (current.renderedLayers.has(key)) return current.renderedLayers.get(key);
     const values = current.layers[key] || current.layers.image;
-    // Approximate robust display limits from at most 20k samples instead of
-    // sorting every detector pixel. The original FITS values are never changed.
-    const sample = key === "flags" ? [] : samplePercentiles(values);
-    const low = key === "flags" ? 0 : percentile(sample, key === "image" ? 0.005 : 0.01);
-    const high = key === "flags" ? 1 : percentile(sample, key === "image" ? 0.995 : 0.99);
+    const finite = values.filter(v => Number.isFinite(v)).sort((a, b) => a - b);
+    const low = percentile(finite, key === "image" ? 0.005 : 0.01);
+    const high = percentile(finite, key === "image" ? 0.995 : 0.99);
     const range = high > low ? high - low : 1;
     const pixels = new ImageData(width, height);
 
@@ -180,7 +156,6 @@
     offscreen.width = width;
     offscreen.height = height;
     offscreen.getContext("2d").putImageData(pixels, 0, 0);
-    current.renderedLayers.set(key, offscreen);
     return offscreen;
   }
 
@@ -292,7 +267,7 @@
           key === currentCoordinates.ra.toFixed(8) + "|" + currentCoordinates.dec.toFixed(8)) {
         draw();
         status.className = "status good";
-        status.textContent = "Loaded Pan-STARRS1 stacked visible-light reference (g/r/i mapped to blue/green/red). This image is static across epochs; it is not time-resolved SPHEREx data.";
+        status.textContent = "Loaded Pan-STARRS1 stacked visible-light colour image (g/r/i mapped to blue/green/red). This is a separate survey image, not SPHEREx data.";
       }
       return true;
     } catch (error) {
@@ -305,55 +280,9 @@
     }
   }
 
-  function drawTemporaryPreview(image, token) {
-    if (token !== previewSequence || current) return;
-    const cw = canvas.width, ch = canvas.height;
-    const scale = Math.min(cw / image.naturalWidth, ch / image.naturalHeight);
-    const w = image.naturalWidth * scale, h = image.naturalHeight * scale;
-    ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = "#050a12";
-    ctx.fillRect(0, 0, cw, ch);
-    ctx.drawImage(image, (cw - w) / 2, (ch - h) / 2, w, h);
-    ctx.fillStyle = "rgba(4,12,24,.88)";
-    ctx.fillRect(8, 8, Math.min(cw - 16, 430), 25);
-    ctx.fillStyle = "#ffd18a";
-    ctx.font = "11px ui-monospace, monospace";
-    ctx.fillText("TEMPORARY PAN-STARRS REFERENCE · LOADING SPHEREx FITS", 15, 25);
-  }
-
-  async function showTemporaryPreview(coordinates, token) {
-    const key = coordinates.ra.toFixed(8) + "|" + coordinates.dec.toFixed(8);
-    if (realColorCache.has(key)) {
-      drawTemporaryPreview(realColorCache.get(key), token);
-      return;
-    }
-    try {
-      const response = await fetch("/api/realcolor", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(coordinates),
-        signal: AbortSignal.timeout(12000)
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.detail || data.error || "Preview unavailable");
-      const image = new Image();
-      await new Promise((resolve, reject) => {
-        image.onload = resolve;
-        image.onerror = () => reject(new Error("Preview image could not be decoded"));
-        image.src = data.imageDataUrl;
-      });
-      realColorCache.set(key, image);
-      while (realColorCache.size > 4) realColorCache.delete(realColorCache.keys().next().value);
-      drawTemporaryPreview(image, token);
-    } catch (error) {
-      // The scientific FITS request continues independently if no preview is available.
-      console.info("Temporary sky preview unavailable:", error?.message || error);
-    }
-  }
-
   function resizeCanvas() {
     const width = Math.max(320, canvas.clientWidth);
-    const height = 600;
+    const height = 430;
     canvas.width = width;
     canvas.height = height;
     canvas.style.height = height + "px";
@@ -382,7 +311,7 @@
   function cutoutCacheKey(record, coordinates) {
     const ra = Number(coordinates?.ra ?? document.getElementById("ra").value);
     const dec = Number(coordinates?.dec ?? document.getElementById("dec").value);
-    return [record.access_url, ra.toFixed(8), dec.toFixed(8), "0.05"].join("|");
+    return [record.access_url, ra.toFixed(8), dec.toFixed(8), "0.1"].join("|");
   }
 
   async function fetchCutoutData(record, coordinates = null) {
@@ -403,8 +332,7 @@
       const response = await fetch("/api/cutout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(22000),
-        body: JSON.stringify({ accessUrl: record.access_url, ra, dec, size: 0.05 })
+        body: JSON.stringify({ accessUrl: record.access_url, ra, dec, size: 0.1 })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.detail || data.error || "Cutout request failed.");
@@ -424,7 +352,7 @@
     }
   }
 
-  async function openCutout(button, coordinates = null, options = {}) {
+  async function openCutout(button, coordinates = null) {
     const thisLoad = ++loadSequence;
     const accessUrl = button.dataset.accessUrl;
     const ra = Number(coordinates?.ra ?? document.getElementById("ra").value);
@@ -436,11 +364,7 @@
       return false;
     }
 
-    // Timeline playback changes observations repeatedly; do not force the
-    // page to scroll back to the viewer on every epoch.
-    if (!options.quiet) {
-      panel.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
+    panel.scrollIntoView({ behavior: "smooth", block: "start" });
     status.className = "status";
     status.textContent = "Requesting a real FITS cutout from NASA/IPAC IRSA…";
     meta.innerHTML = "";
@@ -452,11 +376,6 @@
     ctx.fillStyle = "#8faac2";
     ctx.font = "14px ui-monospace, monospace";
     ctx.fillText("Loading selected SPHEREx observation…", 18, 30);
-    currentCoordinates = { ra, dec };
-    // Do not paint a Pan-STARRS placeholder over the selected SPHEREx
-    // display mode during timeline playback. It is a static survey image,
-    // not an epoch-specific observation.
-    previewSequence++;
 
     try {
       const data = await fetchCutoutData({ access_url: accessUrl }, { ra, dec });
@@ -466,8 +385,7 @@
       current = {
         metadata: data.metadata,
         layers: data.layers,
-        targetPixel: pixel,
-        renderedLayers: new Map()
+        targetPixel: pixel
       };
       currentCoordinates = { ra, dec };
       displayModeSelect.disabled = false;
@@ -486,9 +404,9 @@
       layerSelect.disabled = layerNames.length < 2 || displayModeSelect.value === "real-colour";
       zoom = 1; panX = 0; panY = 0;
       resizeCanvas();
-      if (displayModeSelect.value === "real-colour") loadRealColor();
-      else draw();
       showMetadata(data);
+      if (displayModeSelect.value === "real-colour") loadRealColor();
+
       const inside = pixel && pixel.x >= 0 && pixel.x < data.metadata.width &&
         pixel.y >= 0 && pixel.y < data.metadata.height;
       status.className = "status good";
@@ -498,24 +416,22 @@
       return true;
     } catch (error) {
       if (thisLoad !== loadSequence) return false;
-      if (!options.quiet) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#050a12";
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "#ffb18b";
-        ctx.font = "13px ui-monospace, monospace";
-        ctx.fillText("Observation could not be loaded. Try again or skip to the next epoch.", 18, 30);
-        status.className = "status bad";
-        status.textContent = "FITS viewer error: " + error.message;
-      }
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#050a12";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#ffb18b";
+      ctx.font = "13px ui-monospace, monospace";
+      ctx.fillText("Observation could not be loaded. Try again or skip to the next epoch.", 18, 30);
+      status.className = "status bad";
+      status.textContent = "FITS viewer error: " + error.message;
       return false;
     }
   }
 
   window.SpherexViewer = {
-    loadRecord(record, coordinates, options = {}) {
+    loadRecord(record, coordinates) {
       if (!record || typeof record.access_url !== "string") return Promise.resolve(false);
-      return openCutout({ dataset: { accessUrl: record.access_url } }, coordinates, options);
+      return openCutout({ dataset: { accessUrl: record.access_url } }, coordinates);
     },
     async preloadRecord(record, coordinates) {
       if (!record || typeof record.access_url !== "string") return false;
