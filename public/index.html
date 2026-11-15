@@ -143,7 +143,9 @@ $("target").addEventListener("change",e=>{
   $("search").disabled=false;
   $("search").textContent="SEARCH LIVE SPHEREx ARCHIVE ↗";
   window.dispatchEvent(new CustomEvent("spherex:search-results",{detail:{rows:[],ra:Number($("ra").value),dec:Number($("dec").value),target:e.target.value}}));
+  $("status").className="status";$("status").textContent="Target changed. Search the live archive to load observations for this target.";
   $("results").className="empty";$("results").textContent="Target changed. Search the live archive to load observations for this target.";
+  $("failures").innerHTML="";$("archive-results-menu").open=false;
   $("count").textContent="—";$("epochs").textContent="—";$("releases").textContent="—";$("archive-menu-count").textContent="waiting for search";
 });
 function esc(v){return String(v??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));}
