@@ -2,6 +2,47 @@ export const access = "public";
 export const methods = ["POST"];
 
 const SIA_ENDPOINT = "https://irsa.ipac.caltech.edu/SIA";
+
+const IRSA_FETCH_HEADERS = {
+  "User-Agent": "StardustSyndicate-SPHEREx/1.0 (NASA-Space-Apps-2026)",
+  "Accept": "application/x-votable+xml;q=0.9, text/xml;q=0.8, application/json;q=0.7, text/plain;q=0.6"
+};
+
+async function fetchIrsaWithDiagnostics(url, options = {}) {
+  const startedAt = Date.now();
+  let response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers: {
+        ...IRSA_FETCH_HEADERS,
+        ...(options.headers || {})
+      },
+      cf: { cacheTtl: 0, cacheEverything: false }
+    });
+  } catch (cause) {
+    const elapsed = Date.now() - startedAt;
+    const detail = String(cause?.message || cause).replace(/\s+/g, " ").slice(0, 240);
+    throw new Error("IRSA network fetch failed (" + elapsed + "ms) | cause=" + detail);
+  }
+
+  if (!response.ok) {
+    const rawSnippet = (await response.text()).replace(/\s+/g, " ").slice(0, 300);
+    const serverHeader = response.headers.get("server") || "unknown";
+    const cfRay = response.headers.get("cf-ray") || "none";
+    const contentType = response.headers.get("content-type") || "unknown";
+    const error = new Error(
+      "IRSA HTTP " + response.status + " (" + (Date.now() - startedAt) +
+      "ms) | server=" + serverHeader + " | cf-ray=" + cfRay +
+      " | content-type=" + contentType + " | body=" + rawSnippet
+    );
+    error.retryable = [429, 502, 503, 504].includes(response.status);
+    throw error;
+  }
+
+  return response;
+}
+
 const COLLECTIONS = {
   wide: ["spherex_dr1", "spherex_qr3"],
   deep: ["spherex_dr1_deep", "spherex_qr3_deep"],
@@ -113,16 +154,8 @@ async function queryCollection(collection, ra, dec, radius, filters) {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(url.toString(), {
-        headers: { Accept: "application/x-votable+xml, text/xml" }
-      });
+      const response = await fetchIrsaWithDiagnostics(url.toString());
       const responseText = await response.text();
-      if (!response.ok) {
-        const error = new Error("IRSA HTTP " + response.status + " (" + collection + "): " +
-          responseText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 220));
-        error.retryable = [429, 502, 503, 504].includes(response.status);
-        throw error;
-      }
       if (responseText.trim().startsWith("{")) {
         const parsed = JSON.parse(responseText);
         const rows = Array.isArray(parsed) ? parsed : (parsed.data || parsed.rows || parsed.results || []);
@@ -180,24 +213,26 @@ async function queryTapFallback(ra, dec, radius, filters, requested) {
     "ORDER BY p.time_bounds_lower"
   ].join(" ");
 
-  const endpoint = new URL("https://irsa.ipac.caltech.edu/TAP/sync");
-  endpoint.searchParams.set("QUERY", query);
-  endpoint.searchParams.set("FORMAT", "VOTABLE");
-  endpoint.searchParams.set("MAXREC", "2000");
+  const endpoint = "https://irsa.ipac.caltech.edu/TAP/sync";
+  const formBody = new URLSearchParams({
+    REQUEST: "doQuery",
+    LANG: "ADQL",
+    QUERY: query,
+    FORMAT: "VOTABLE",
+    MAXREC: "2000"
+  });
 
   let lastError;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      const response = await fetch(endpoint.toString(), {
-        headers: { Accept: "application/x-votable+xml, text/xml" }
+      const response = await fetchIrsaWithDiagnostics(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded"
+        },
+        body: formBody.toString()
       });
       const responseText = await response.text();
-      if (!response.ok) {
-        const error = new Error("IRSA TAP HTTP " + response.status + ": " +
-          responseText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 220));
-        error.retryable = [429, 502, 503, 504].includes(response.status);
-        throw error;
-      }
       const rows = parseVOTable(responseText, "spherex_tap");
       return rows.filter(row => {
         const value = String(row.access_url || "");
@@ -276,13 +311,26 @@ export default async function (req, res) {
   // not cached or generated observation data. The 2D viewer still receives
   // only official DR1/QR3 FITS access URLs.
   let tapFallbackUsed = false;
-  if (!records.length && failures.length > 0 &&
-      requested.some(collection => collection !== "spherex_dr1_cube")) {
+  // Supplement partial SIA2 results when one or more collections fail.
+  // Do not use TAP when wavelength bounds are active: this fallback query
+  // does not yet translate those bounds into a verified TAP predicate.
+  if (failures.length > 0 &&
+      requested.some(collection => collection !== "spherex_dr1_cube") &&
+      wavelengthMin === null && wavelengthMax === null) {
     try {
       const tapRecords = await queryTapFallback(ra, dec, radius, filters, requested);
       if (tapRecords.length) {
-        records = tapRecords;
-        tapFallbackUsed = true;
+        const existingUrls = new Set(records
+          .map(row => String(row.access_url || "").trim().toLowerCase())
+          .filter(Boolean));
+        const additions = tapRecords
+          .filter(row => {
+            const url = String(row.access_url || "").trim().toLowerCase();
+            return url && !existingUrls.has(url);
+          })
+          .map(row => ({ ...row, archive_source: "IRSA TAP" }));
+        records = records.concat(additions);
+        tapFallbackUsed = additions.length > 0;
       }
     } catch (error) {
       failures.push({
@@ -300,7 +348,9 @@ export default async function (req, res) {
 
   return res.json({
     source: tapFallbackUsed
-      ? "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx TAP fallback; SIA2 unavailable"
+      ? (settled.some(item => item.status === "fulfilled")
+        ? "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx SIA2 + TAP (merged)"
+        : "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx TAP fallback")
       : "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx SIA2",
     endpoint: tapFallbackUsed ? "https://irsa.ipac.caltech.edu/TAP/sync" : SIA_ENDPOINT,
     fallback_used: tapFallbackUsed,
@@ -319,7 +369,9 @@ export default async function (req, res) {
     partial: failures.length > 0 && records.length > 0,
     message: records.length
       ? (tapFallbackUsed
-        ? "SIA2 was unavailable. Real SPHEREx FITS records were recovered from IRSA's TAP metadata service."
+        ? (settled.some(item => item.status === "fulfilled")
+          ? "SIA2 returned partial results; additional real SPHEREx FITS records were recovered from IRSA TAP metadata and merged without duplicate URLs."
+          : "SIA2 was unavailable. Real SPHEREx FITS records were recovered from IRSA's TAP metadata service.")
         : (failures.length ? "Some collections returned records while others failed. See failures." : null))
       : (failures.length
         ? "No collection returned usable records. See per-collection errors; this is not evidence of no observations."
