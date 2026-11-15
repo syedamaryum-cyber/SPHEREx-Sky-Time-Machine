@@ -130,8 +130,8 @@ async function fetchCutout(url) {
       lastError = error;
       const retryable = error?.retryable === true ||
         (!error?.message?.startsWith("IRSA returned HTTP ") && !error?.message?.includes("valid FITS"));
-      if (!retryable || attempt === 2) break;
-      await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 700 : 1500));
+      if (!retryable || attempt === 1) break;
+      await new Promise(resolve => setTimeout(resolve, 400));
     }
   }
   throw lastError || new Error("Could not retrieve the FITS cutout.");
