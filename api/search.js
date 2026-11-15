@@ -282,7 +282,7 @@ export default async function (req, res) {
   // not cached or generated observation data. The 2D viewer still receives
   // only official DR1/QR3 FITS access URLs.
   let tapFallbackUsed = false;
-  if (!records.length && failures.length === requested.length &&
+  if (!records.length && failures.length > 0 &&
       requested.some(collection => collection !== "spherex_dr1_cube")) {
     try {
       const tapRecords = await queryTapFallback(ra, dec, radius, filters, requested);
