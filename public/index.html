@@ -76,22 +76,24 @@ input,select{width:100%;background:#081221;border:1px solid #30445f;border-radiu
   <div class="timeline-actions">
     <button type="button" id="timeline-prev" disabled>← Previous</button>
     <button type="button" id="timeline-play" disabled>▶ Play</button>
+    <label for="timeline-mode">Sequence</label>
+    <select id="timeline-mode" disabled><option value="highlights">Auto Highlights · 12 epochs</option><option value="all">All Observations · full timeline</option></select>
     <button type="button" id="timeline-next" disabled>Next →</button>
     <label for="timeline-product">Product</label>
     <select id="timeline-product" disabled></select>
   </div>
   <input id="timeline-range" type="range" min="0" max="0" value="0" step="1" disabled aria-label="Select observation epoch">
   <div class="timeline-caption" id="timeline-caption">Search the archive to build a chronological sequence.</div>
-  <div class="timeline-note">Each step loads a real archive FITS cutout on demand. Products sharing an observation ID are grouped into one observing epoch; use Product to switch wavelength products within that epoch.</div>
+  <div class="timeline-note">Auto Highlights samples up to 12 epochs across the complete time range. All Observations keeps every grouped epoch available. Products sharing an observation ID are grouped into one epoch; use Product to switch wavelength products.</div>
 </div>
 <div class="viewer-canvas-wrap"><canvas id="fits-canvas" aria-label="SPHEREx FITS image cutout"></canvas></div>
 <div class="viewer-meta" id="fits-meta"></div>
-<p class="hint">The red cross marks the searched ICRS coordinate. SPHEREx false colour visualizes infrared detector intensity; Pan-STARRS real sky colour is a separate visible-light g/r/i survey composite at the same sky position and field of view. The survey image is not SPHEREx data, and coverage is not available everywhere.</p>
+<p class="hint">The red cross marks the searched ICRS coordinate. SPHEREx false colour visualizes infrared detector intensity; Pan-STARRS real sky colour is a separate, static stacked visible-light g/r/i survey reference. It does not change between SPHEREx epochs and cannot show epoch-to-epoch motion. It is not SPHEREx data, and coverage is not available everywhere.</p>
 </section>
 </div>
 <div class="foot">Data source: NASA/IPAC Infrared Science Archive (IRSA), SPHEREx SIA2 and IBE. The viewer extracts real FITS image, variance, quality-flag, and zodiacal layers from archive cutouts. Full FITS products remain available through their archive links.</div>
-<script src="/viewer.js?v=19" defer></script>
-<script src="/timeline.js?v=17" defer></script>
+<script src="/viewer.js?v=20" defer></script>
+<script src="/timeline.js?v=18" defer></script>
 <script>
 const $=id=>document.getElementById(id);
 const collectionInputs=[...document.querySelectorAll('input[name="collection"]')];
