@@ -210,7 +210,8 @@
 
   function buildEpochs(rows) {
     const usable = rows.filter(row =>
-      row && typeof row.access_url === "string" &&
+      row && row.collection !== "spherex_dr1_cube" &&
+      typeof row.access_url === "string" && !/hips5_cube/i.test(row.access_url) &&
       /^https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/spherex\//i.test(row.access_url) &&
       number(row.t_min ?? row.mjd_obs ?? row.mjd) !== null
     );

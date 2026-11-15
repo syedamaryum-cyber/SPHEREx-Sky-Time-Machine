@@ -5,6 +5,7 @@ const SIA_ENDPOINT = "https://irsa.ipac.caltech.edu/SIA";
 const COLLECTIONS = {
   wide: ["spherex_dr1", "spherex_qr3"],
   deep: ["spherex_dr1_deep", "spherex_qr3_deep"],
+  cube: ["spherex_dr1_cube"],
   all: ["spherex_dr1", "spherex_dr1_deep", "spherex_qr3", "spherex_qr3_deep"]
 };
 
@@ -65,7 +66,8 @@ function normalizeCollections(value) {
   if (value === "spherex_qr3") return ["spherex_qr3"];
   if (value === "spherex_dr1_deep") return ["spherex_dr1_deep"];
   if (value === "spherex_qr3_deep") return ["spherex_qr3_deep"];
-  throw new Error("Unsupported collection selection. The All-Sky Cube is not yet supported by the 2D FITS viewer.");
+  if (value === "spherex_dr1_cube") return COLLECTIONS.cube;
+  throw new Error("Unsupported SPHEREx collection selection.");
 }
 
 function validIsoDate(value, field) {

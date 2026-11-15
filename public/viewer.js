@@ -575,8 +575,17 @@
 
   window.addEventListener("spherex:search-results", event => {
     const rows = event.detail?.rows;
-    if (!Array.isArray(rows) || rows.length === 0) {
-      clearViewer("No verified SPHEREx observation is currently loaded. The previous image has been cleared.");
+    const has2DProduct = Array.isArray(rows) && rows.some(row =>
+      row && row.collection !== "spherex_dr1_cube" &&
+      typeof row.access_url === "string" && !/hips5_cube/i.test(row.access_url)
+    );
+    if (!has2DProduct) {
+      const hasCube = Array.isArray(rows) && rows.some(row =>
+        row && (row.collection === "spherex_dr1_cube" || /hips5_cube/i.test(String(row.access_url || "")))
+      );
+      clearViewer(hasCube
+        ? "All-Sky Cube records found. These are 3D spectral FITS products; open them from the archive table. The previous 2D image has been cleared."
+        : "No verified 2D SPHEREx observation is currently loaded. The previous image has been cleared.");
     }
   });
 

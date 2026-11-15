@@ -38,7 +38,7 @@ input,select{width:100%;background:#081221;border:1px solid #30445f;border-radiu
 </style>
 </head>
 <body>
-<header><div class="kicker">Stardust Syndicate · NASA Space Apps</div><h1>SPHEREx Sky<br><span style="color:var(--cyan)">Time-Machine</span></h1><p class="sub">Explore the infrared sky through real SPHEREx spectral-image archive records. Search a position, constrain the observation period and wavelength range, and inspect archive metadata without inventing observations.</p></header>
+<header><div class="kicker">Stardust Syndicate · NASA Space Apps</div><h1>SPHEREx Sky<br><span style="color:var(--cyan)">Time-Machine</span></h1><p class="sub">Explore the infrared sky through real SPHEREx spectral-image and DR1 All-Sky Cube archive products. Search a position, constrain the observation period and wavelength range, and inspect archive metadata without inventing observations.</p></header>
 <main>
 <section class="panel">
 <h2>01 / Search parameters</h2>
@@ -56,21 +56,21 @@ input,select{width:100%;background:#081221;border:1px solid #30445f;border-radiu
 <label class="check"><input type="checkbox" name="collection" value="spherex_dr1_deep" checked> DR1 — Deep Survey</label>
 <label class="check"><input type="checkbox" name="collection" value="spherex_qr3" checked> QR3 — Wide Survey</label>
 <label class="check"><input type="checkbox" name="collection" value="spherex_qr3_deep" checked> QR3 — Deep Survey</label>
-<label class="check"><input type="checkbox" disabled> DR1 — All-Sky Cube (spectral-cube viewer not yet supported)</label>
+<label class="check"><input type="checkbox" name="collection" value="spherex_dr1_cube"> DR1 — All-Sky Cube (3D spectral FITS)</label>
 </div>
 <h3>Observation date range (optional)</h3>
 <div class="grid2"><div><label for="startDate">Start date (UTC)</label><input id="startDate" type="date"></div><div><label for="endDate">End date (UTC)</label><input id="endDate" type="date"></div></div>
 <h3>Wavelength range (optional)</h3>
 <div class="grid2"><div><label for="waveMin">Minimum (µm)</label><input id="waveMin" type="number" min="0" step="any" placeholder="e.g. 1.0"></div><div><label for="waveMax">Maximum (µm)</label><input id="waveMax" type="number" min="0" step="any" placeholder="e.g. 2.4"></div></div>
 <button class="primary" id="search">SEARCH LIVE SPHEREX ARCHIVE ↗</button>
-<div class="hint">Coordinates use ICRS. WISE 0855, Barnard’s Star, RW Aurigae, and R Draconis use catalog proper motions; Epsilon Indi B uses its SIMBAD position with the primary star’s systemic proper motion as an approximate bound-system proxy. Positions are propagated linearly to each observation epoch; annual parallax and orbital motion are not included. Target markers are shown only when the FITS WCS projection is supported and the transform converges. The All-Sky Cube is temporarily disabled because it requires a dedicated 3D spectral-channel viewer. Choose spectral-image collections explicitly. Dates and wavelengths are optional.</div>
+<div class="hint">Coordinates use ICRS. WISE 0855, Barnard’s Star, RW Aurigae, and R Draconis use catalog proper motions; Epsilon Indi B uses its SIMBAD position with the primary star’s systemic proper motion as an approximate bound-system proxy. Positions are propagated linearly to each observation epoch; annual parallax and orbital motion are not included. Target markers are shown only when the FITS WCS projection is supported and the transform converges. DR1 All-Sky Cube is searchable here as a 3D spectral FITS product and can be opened from its IRSA link; it is not displayed in the 2D FITS viewer or epoch playback. Dates and wavelengths are optional.</div>
 </section>
 <section class="panel">
 <h2>02 / Archive results</h2>
 <div class="status" id="status">Ready. Select collections, enter coordinates, and search the live archive.</div>
-<div class="stats"><div class="stat"><b id="count">—</b><span>Image records</span></div><div class="stat"><b id="epochs">—</b><span>Distinct time values*</span></div><div class="stat"><b id="releases">—</b><span>Collections queried</span></div></div>
+<div class="stats"><div class="stat"><b id="count">—</b><span>Archive records</span></div><div class="stat"><b id="epochs">—</b><span>Distinct time values*</span></div><div class="stat"><b id="releases">—</b><span>Collections queried</span></div></div>
 <div id="failures"></div>
-<details id="archive-results-menu"><summary>Archive response table · <span id="archive-menu-count">waiting for search</span></summary><div id="results" class="empty">Your real SPHEREx archive results will appear here.</div><p class="hint">*Distinct time values are estimated from returned metadata. Multiple detector images may belong to one observing epoch. A failed archive query is not the same as zero observations.</p></details>
+<details id="archive-results-menu"><summary>Archive response table · <span id="archive-menu-count">waiting for search</span></summary><div id="results" class="empty">Your real SPHEREx archive results will appear here.</div><p class="hint">*Distinct time values are estimated from returned metadata. Multiple detector images may belong to one observing epoch. All-Sky Cube entries are 3D DR1 products, not time-sequenced 2D images. They remain available through their direct IRSA product links. A failed archive query is not the same as zero observations.</p></details>
 </section>
 </main>
 <div class="viewer-wrap">
@@ -122,8 +122,8 @@ input,select{width:100%;background:#081221;border:1px solid #30445f;border-radiu
 </section>
 </div>
 <div class="foot">Data source: NASA/IPAC Infrared Science Archive (IRSA), SPHEREx SIA2 and IBE. The viewer extracts real FITS image, variance, quality-flag, and zodiacal layers from archive cutouts. Full FITS products remain available through their archive links.</div>
-<script src="/viewer.js?v=30" defer></script>
-<script src="/timeline.js?v=28" defer></script>
+<script src="/viewer.js?v=31" defer></script>
+<script src="/timeline.js?v=29" defer></script>
 <script>
 const $=id=>document.getElementById(id);
 const collectionInputs=[...document.querySelectorAll('input[name="collection"]')];
@@ -198,13 +198,16 @@ $("search").addEventListener("click",async()=>{
       $("results").innerHTML='<table><thead><tr><th>Collection</th><th>Observation ID</th><th>Instrument / band</th><th>Start (MJD)</th><th>End (MJD)</th><th>Wavelength</th><th>Data product</th></tr></thead><tbody>'+
         rows.map(r=>{
           const id=firstValue(r,["obs_id","obs_publisher_did","obs_collection","obs_title"]);
-          const instrument=firstValue(r,["energy_bandpassname","instrument_name","instrument","detector","band"]);
+          const isCube=r.collection==="spherex_dr1_cube"||/hips5_cube/i.test(String(r.access_url||""));
+          const collectionLabel=isCube?"DR1 — All-Sky Cube":({spherex_dr1:"DR1 — Wide Survey",spherex_dr1_deep:"DR1 — Deep Survey",spherex_qr3:"QR3 — Wide Survey",spherex_qr3_deep:"QR3 — Deep Survey"}[r.collection]||r.collection);
+          const instrument=isCube?"3D cube · 102 spectral channels":firstValue(r,["energy_bandpassname","instrument_name","instrument","detector","band"]);
           const start=firstValue(r,["t_min","mjd_obs","mjd"]);
           const end=firstValue(r,["t_max"]);
           const wavelength=firstValue(r,["em_min","em_max"]);
           const wave=(Number.isFinite(Number(r.em_min))&&Number.isFinite(Number(r.em_max)))?(Number(r.em_min)*1e6).toFixed(3)+" – "+(Number(r.em_max)*1e6).toFixed(3)+" μm":"—";
-          const viewButton=typeof r.access_url==="string"&&/^https:\/\//i.test(r.access_url)?'<button class="view-cutout" data-access-url="'+esc(r.access_url)+'">View FITS cutout</button>':"—";
-          return "<tr><td>"+esc(r.collection)+"</td><td>"+esc(id)+"</td><td>"+esc(instrument)+"</td><td>"+esc(start)+"</td><td>"+esc(end)+"</td><td>"+wave+"</td><td>"+safeLink(r.access_url,"Open FITS / product")+"<br>"+viewButton+(r.cloud_access?"<br>"+esc(typeof r.cloud_access==="string"?r.cloud_access:JSON.stringify(r.cloud_access)):"")+"</td></tr>";
+          const viewButton=isCube?'<span class="hint">3D cube · not available in 2D viewer</span>':(typeof r.access_url==="string"&&/^https:\/\//i.test(r.access_url)?'<button class="view-cutout" data-access-url="'+esc(r.access_url)+'">View FITS cutout</button>':"—");
+          const productLink=safeLink(r.access_url,isCube?"Open / download 3D FITS cube (IRSA)":"Open FITS / product");
+          return "<tr><td>"+esc(collectionLabel)+"</td><td>"+esc(id)+"</td><td>"+esc(instrument)+"</td><td>"+esc(start)+"</td><td>"+esc(end)+"</td><td>"+wave+"</td><td>"+productLink+"<br>"+viewButton+(r.cloud_access?"<br>"+esc(typeof r.cloud_access==="string"?r.cloud_access:JSON.stringify(r.cloud_access)):"")+"</td></tr>";
         }).join("")+"</tbody></table>";
     }else{
       $("status").className="status "+(data.failures?.length?"bad":"");
