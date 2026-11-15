@@ -15,11 +15,11 @@ async function cacheKeyFor(request) {
 }
 
 export async function onRequestPost({ request }) {
-  // Cache successful, position-specific FITS cutouts at the Cloudflare edge.
-  // The source product URL and exact cutout coordinates are part of the key.
+  let cache;
+  let key;
   try {
-    const cache = caches.default;
-    const key = await cacheKeyFor(request);
+    cache = caches.default;
+    key = await cacheKeyFor(request);
     const cached = await cache.match(key);
     if (cached) {
       const headers = new Headers(cached.headers);
@@ -30,30 +30,34 @@ export async function onRequestPost({ request }) {
         headers
       });
     }
-
-    const response = await runLegacy(handler, request);
-    if (response.ok) {
-      const storedHeaders = new Headers(response.headers);
-      storedHeaders.set("Cache-Control", "public, max-age=86400");
-      storedHeaders.delete("X-SPHEREX-CACHE");
-      const stored = new Response(response.clone().body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: storedHeaders
-      });
-      await cache.put(key, stored);
-      const clientHeaders = new Headers(storedHeaders);
-      clientHeaders.set("X-SPHEREX-CACHE", "MISS");
-      return new Response(response.body, {
-        status: response.status,
-        statusText: response.statusText,
-        headers: clientHeaders
-      });
-    }
-    return response;
   } catch (error) {
-    // If edge caching is unavailable, preserve the normal live IRSA path.
-    console.warn("SPHEREx cutout edge cache unavailable:", error?.message || error);
+    console.warn("SPHEREx edge-cache lookup unavailable:", error?.message || error);
     return runLegacy(handler, request);
   }
+
+  const response = await runLegacy(handler, request);
+  if (!response.ok) return response;
+
+  const storedHeaders = new Headers(response.headers);
+  storedHeaders.set("Cache-Control", "public, max-age=86400");
+  storedHeaders.delete("X-SPHEREX-CACHE");
+  const stored = new Response(response.clone().body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: storedHeaders
+  });
+
+  try {
+    await cache.put(key, stored);
+  } catch (error) {
+    console.warn("SPHEREx edge-cache store unavailable:", error?.message || error);
+  }
+
+  const clientHeaders = new Headers(storedHeaders);
+  clientHeaders.set("X-SPHEREX-CACHE", "MISS");
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: clientHeaders
+  });
 }
