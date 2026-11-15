@@ -113,7 +113,7 @@ async function fetchCutout(url) {
     try {
       const response = await fetch(url, {
         headers: { Accept: "application/fits, application/octet-stream" },
-        timeout_ms: 25000
+        signal: AbortSignal.timeout(18000)
       });
       if (!response.ok) {
         const body = (await response.text()).slice(0, 180);
@@ -128,8 +128,9 @@ async function fetchCutout(url) {
       return bytes;
     } catch (error) {
       lastError = error;
-      const retryable = error?.retryable === true ||
-        (!error?.message?.startsWith("IRSA returned HTTP ") && !error?.message?.includes("valid FITS"));
+      const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+      const retryable = !timedOut && (error?.retryable === true ||
+        (!error?.message?.startsWith("IRSA returned HTTP ") && !error?.message?.includes("valid FITS")));
       if (!retryable || attempt === 1) break;
       await new Promise(resolve => setTimeout(resolve, 400));
     }
