@@ -146,7 +146,7 @@ async function queryTapFallback(ra, dec, radius, filters, requested) {
   // This is the documented IRSA SPHEREx metadata query pattern:
   // spherex.artifact JOIN spherex.plane, with a sky-footprint CONTAINS test.
   const where = [
-    "1 = CONTAINS(POINT('ICRS', " + ra + ", " + dec + "), p.poly)"
+    "1 = INTERSECTS(CIRCLE('ICRS', " + ra + ", " + dec + ", " + radius + "), p.poly)"
   ];
 
   const wantsDr1 = requested.some(value => /^spherex_dr1(?:_deep)?$/.test(value));
