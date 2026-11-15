@@ -353,7 +353,7 @@
 
   function resizeCanvas() {
     const width = Math.max(320, canvas.clientWidth);
-    const height = 430;
+    const height = 600;
     canvas.width = width;
     canvas.height = height;
     canvas.style.height = height + "px";
