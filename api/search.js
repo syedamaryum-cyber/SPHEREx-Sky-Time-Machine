@@ -141,6 +141,88 @@ async function queryCollection(collection, ra, dec, radius, filters) {
   throw lastError || new Error("Unknown IRSA query failure.");
 }
 
+
+async function queryTapFallback(ra, dec, radius, filters, requested) {
+  const where = [
+    "1 = CONTAINS(POINT('ICRS', " + ra + ", " + dec + "), p.poly)"
+  ];
+
+  // Keep a single-release selection constrained to that release. TAP does not
+  // expose the SIA collection names directly; wide/deep are represented by
+  // the real product footprints in the shared SPHEREx metadata tables.
+  const wantsDr1 = requested.some(value => /^spherex_dr1(?:_deep)?$/.test(value));
+  const wantsQr3 = requested.some(value => /^spherex_qr3(?:_deep)?$/.test(value));
+  if (wantsDr1 && !wantsQr3) where.push("a.uri LIKE '%/dr1/%'");
+  if (wantsQr3 && !wantsDr1) where.push("a.uri LIKE '%/qr3/%'");
+
+  const toMjd = value => Date.parse(value) / 86400000 + 40587;
+  if (filters.startDate) {
+    where.push("p.time_bounds_upper >= " + toMjd(filters.startDate));
+  }
+  if (filters.endDate) {
+    const endMs = Date.parse(filters.endDate);
+    const inclusiveEnd = endMs + (/^\\d{4}-\\d{2}-\\d{2}$/.test(filters.endDate) ? 86400000 : 0);
+    where.push("p.time_bounds_lower <= " + (inclusiveEnd / 86400000 + 40587));
+  }
+  if (filters.wavelengthMin != null) {
+    where.push("p.energy_bounds_upper >= " + (filters.wavelengthMin * 1e-6));
+  }
+  if (filters.wavelengthMax != null) {
+    where.push("p.energy_bounds_lower <= " + (filters.wavelengthMax * 1e-6));
+  }
+
+  const query = [
+    "SELECT TOP 2000",
+    "  'https://irsa.ipac.caltech.edu/' || a.uri AS access_url,",
+    "  p.time_bounds_lower AS t_min,",
+    "  p.time_bounds_upper AS t_max,",
+    "  p.energy_bounds_lower AS em_min,",
+    "  p.energy_bounds_upper AS em_max,",
+    "  p.energy_bandpassname AS energy_bandpassname,",
+    "  CASE WHEN a.uri LIKE '%/dr1/%' THEN 'SPHEREx DR1 (TAP fallback)'",
+    "       WHEN a.uri LIKE '%/qr3/%' THEN 'SPHEREx QR3 (TAP fallback)'",
+    "       ELSE 'SPHEREx (TAP fallback)' END AS collection",
+    "FROM spherex.artifact a",
+    "JOIN spherex.plane p ON a.planeid = p.planeid",
+    "WHERE " + where.join(" AND "),
+    "ORDER BY p.time_bounds_lower"
+  ].join(" ");
+
+  const endpoint = new URL("https://irsa.ipac.caltech.edu/TAP/sync");
+  endpoint.searchParams.set("QUERY", query);
+  endpoint.searchParams.set("FORMAT", "votable");
+  endpoint.searchParams.set("MAXREC", "2000");
+
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await fetch(endpoint.toString(), {
+        headers: { Accept: "application/x-votable+xml, text/xml" }
+      });
+      const responseText = await response.text();
+      if (!response.ok) {
+        const error = new Error("IRSA TAP HTTP " + response.status + ": " +
+          responseText.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").slice(0, 220));
+        error.retryable = [429, 502, 503, 504].includes(response.status);
+        throw error;
+      }
+      const rows = parseVOTable(responseText, "spherex_tap");
+      return rows.filter(row => {
+        const value = String(row.access_url || "");
+        return /^https:\\/\\/irsa\\.ipac\\.caltech\\.edu\\/ibe\\/data\\/spherex\\/(?:dr1|qr3)\\//i.test(value) &&
+          value.toLowerCase().endsWith(".fits");
+      });
+    } catch (error) {
+      lastError = error;
+      const transient = error?.retryable === true ||
+        (error?.retryable === undefined && !(error?.message || "").startsWith("IRSA TAP HTTP "));
+      if (!transient || attempt === 2) break;
+      await new Promise(resolve => setTimeout(resolve, attempt === 0 ? 800 : 1800));
+    }
+  }
+  throw lastError || new Error("Unknown IRSA TAP fallback failure.");
+}
+
 export default async function (req, res) {
   const body = req.body || {};
   const ra = Number(body.ra);
@@ -192,10 +274,31 @@ export default async function (req, res) {
       settled.push({ status: "rejected", reason });
     }
   }
-  const records = settled.flatMap(item => item.status === "fulfilled" ? item.value : []);
+  let records = settled.flatMap(item => item.status === "fulfilled" ? item.value : []);
   const failures = settled.map((item, index) => item.status === "rejected"
     ? { collection: requested[index], error: String(item.reason?.message || item.reason) }
     : null).filter(Boolean);
+
+  // If every SIA collection failed, retry the same real archive search through
+  // IRSA's documented TAP metadata tables. This is an alternate archive API,
+  // not cached or generated observation data. The 2D viewer still receives
+  // only official DR1/QR3 FITS access URLs.
+  let tapFallbackUsed = false;
+  if (!records.length && failures.length === requested.length &&
+      requested.some(collection => collection !== "spherex_dr1_cube")) {
+    try {
+      const tapRecords = await queryTapFallback(ra, dec, radius, filters, requested);
+      if (tapRecords.length) {
+        records = tapRecords;
+        tapFallbackUsed = true;
+      }
+    } catch (error) {
+      failures.push({
+        collection: "IRSA TAP fallback",
+        error: String(error?.message || error)
+      });
+    }
+  }
 
   records.sort((a, b) => {
     const ta = Number(a.t_min ?? a.mjd_obs ?? a.mjd ?? Infinity);
@@ -204,8 +307,11 @@ export default async function (req, res) {
   });
 
   return res.json({
-    source: "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx SIA2",
-    endpoint: SIA_ENDPOINT,
+    source: tapFallbackUsed
+      ? "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx TAP fallback; SIA2 unavailable"
+      : "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx SIA2",
+    endpoint: tapFallbackUsed ? "https://irsa.ipac.caltech.edu/TAP/sync" : SIA_ENDPOINT,
+    fallback_used: tapFallbackUsed,
     coordinates: { ra, dec, radius_deg: radius, frame: "ICRS", coordinate_epoch: "input coordinates; target presets are propagated to J2026.0" },
     filters: {
       start_date: startDate,
@@ -220,7 +326,9 @@ export default async function (req, res) {
     failures,
     partial: failures.length > 0 && records.length > 0,
     message: records.length
-      ? (failures.length ? "Some collections returned records while others failed. See failures." : null)
+      ? (tapFallbackUsed
+        ? "SIA2 was unavailable. Real SPHEREx FITS records were recovered from IRSA's TAP metadata service."
+        : (failures.length ? "Some collections returned records while others failed. See failures." : null))
       : (failures.length
         ? "No collection returned usable records. See per-collection errors; this is not evidence of no observations."
         : "IRSA returned no matching records for the requested position and filters.")
