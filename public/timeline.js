@@ -100,7 +100,7 @@
   const preloadQueue = [];
   const queuedPreloads = new Set();
   let preloadWorkersRunning = 0;
-  const PRELOAD_WORKERS = 1;
+  const PRELOAD_WORKERS = 2;
 
   function runPreloadWorkers() {
     while (preloadWorkersRunning < PRELOAD_WORKERS && preloadQueue.length) {
@@ -120,7 +120,7 @@
 
     // Keep only a short look-ahead. Preloading the entire timeline can
     // launch more than a hundred archive requests for a single search.
-    const lookAhead = Math.min(1, epochs.length - 1);
+    const lookAhead = Math.min(2, epochs.length - 1);
     for (let offset = 1; offset <= lookAhead; offset++) {
       const epoch = epochs[index + offset];
       if (!epoch) continue;
