@@ -311,13 +311,26 @@ export default async function (req, res) {
   // not cached or generated observation data. The 2D viewer still receives
   // only official DR1/QR3 FITS access URLs.
   let tapFallbackUsed = false;
-  if (!records.length && failures.length > 0 &&
-      requested.some(collection => collection !== "spherex_dr1_cube")) {
+  // Supplement partial SIA2 results when one or more collections fail.
+  // Do not use TAP when wavelength bounds are active: this fallback query
+  // does not yet translate those bounds into a verified TAP predicate.
+  if (failures.length > 0 &&
+      requested.some(collection => collection !== "spherex_dr1_cube") &&
+      wavelengthMin === null && wavelengthMax === null) {
     try {
       const tapRecords = await queryTapFallback(ra, dec, radius, filters, requested);
       if (tapRecords.length) {
-        records = tapRecords;
-        tapFallbackUsed = true;
+        const existingUrls = new Set(records
+          .map(row => String(row.access_url || "").trim().toLowerCase())
+          .filter(Boolean));
+        const additions = tapRecords
+          .filter(row => {
+            const url = String(row.access_url || "").trim().toLowerCase();
+            return url && !existingUrls.has(url);
+          })
+          .map(row => ({ ...row, archive_source: "IRSA TAP" }));
+        records = records.concat(additions);
+        tapFallbackUsed = additions.length > 0;
       }
     } catch (error) {
       failures.push({
@@ -335,7 +348,9 @@ export default async function (req, res) {
 
   return res.json({
     source: tapFallbackUsed
-      ? "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx TAP fallback; SIA2 unavailable"
+      ? (settled.some(item => item.status === "fulfilled")
+        ? "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx SIA2 + TAP (merged)"
+        : "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx TAP fallback")
       : "NASA/IPAC Infrared Science Archive (IRSA) SPHEREx SIA2",
     endpoint: tapFallbackUsed ? "https://irsa.ipac.caltech.edu/TAP/sync" : SIA_ENDPOINT,
     fallback_used: tapFallbackUsed,
@@ -354,7 +369,9 @@ export default async function (req, res) {
     partial: failures.length > 0 && records.length > 0,
     message: records.length
       ? (tapFallbackUsed
-        ? "SIA2 was unavailable. Real SPHEREx FITS records were recovered from IRSA's TAP metadata service."
+        ? (settled.some(item => item.status === "fulfilled")
+          ? "SIA2 returned partial results; additional real SPHEREx FITS records were recovered from IRSA TAP metadata and merged without duplicate URLs."
+          : "SIA2 was unavailable. Real SPHEREx FITS records were recovered from IRSA's TAP metadata service.")
         : (failures.length ? "Some collections returned records while others failed. See failures." : null))
       : (failures.length
         ? "No collection returned usable records. See per-collection errors; this is not evidence of no observations."
