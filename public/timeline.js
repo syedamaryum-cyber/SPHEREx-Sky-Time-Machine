@@ -139,95 +139,87 @@
       .trim().toLowerCase();
   }
 
-  async function selectEpoch(index, productIndex = null) {
+  async function selectEpoch(index, productIndex = null, direction = 1) {
     if (!epochs.length) return false;
     const previousEpoch = epochs[activeIndex];
     const previousRecord = previousEpoch?.products?.[activeProduct];
     const preferredProduct = productIdentity(previousRecord);
-    activeIndex = Math.max(0, Math.min(epochs.length - 1, index));
-    const epoch = epochs[activeIndex];
-
-    const matchingProduct = preferredProduct
-      ? epoch.products.findIndex(item => productIdentity(item) === preferredProduct)
-      : -1;
-    const requestedProduct = productIndex !== null && productIndex !== undefined
-      ? Math.max(0, Math.min(epoch.products.length - 1, productIndex))
-      : (matchingProduct >= 0 ? matchingProduct : 0);
-
-    const productOrder = [
-      requestedProduct,
-      ...epoch.products.map((_, i) => i).filter(i => i !== requestedProduct)
-    ];
     const token = ++selectionToken;
-
-    range.value = String(activeIndex);
-    indexLabel.textContent = (activeIndex + 1) + " / " + epochs.length;
-    caption.textContent =
-      utcFromMjd(epoch.mjd) + " · MJD " + epoch.mjd.toFixed(6) +
-      (epoch.observationId ? " · " + epoch.observationId : "");
-    productSelect.innerHTML = "";
-    epoch.products.forEach((item, i) => {
-      const option = document.createElement("option");
-      option.value = String(i);
-      option.textContent = productLabel(item, i);
-      productSelect.appendChild(option);
-    });
+    const step = direction < 0 ? -1 : 1;
+    const firstIndex = (index + epochs.length) % epochs.length;
 
     summary.textContent = epochs.length + " observing epochs · " +
       epochs.reduce((total, item) => total + item.products.length, 0) + " FITS products";
-    root.dataset.loading = "true";
-    caption.dataset.state = "loading";
 
-    let loaded = false;
-    let loadedProduct = -1;
-    for (const candidate of productOrder) {
-      if (token !== selectionToken) return false;
-      activeProduct = candidate;
-      productSelect.value = String(candidate);
-      loaded = await window.SpherexViewer.loadRecord(epoch.products[candidate], searchCoordinates);
-      if (token !== selectionToken) return loaded;
-      if (loaded) {
-        loadedProduct = candidate;
-        break;
+    for (let offset = 0; offset < epochs.length; offset++) {
+      const epochIndex = (firstIndex + step * offset + epochs.length * 2) % epochs.length;
+      const epoch = epochs[epochIndex];
+      if (!epoch?.products?.length) continue;
+
+      activeIndex = epochIndex;
+      const matchingProduct = preferredProduct
+        ? epoch.products.findIndex(item => productIdentity(item) === preferredProduct)
+        : -1;
+      const requestedProduct = offset === 0 && productIndex !== null && productIndex !== undefined
+        ? Math.max(0, Math.min(epoch.products.length - 1, productIndex))
+        : (matchingProduct >= 0 ? matchingProduct : 0);
+
+      const productOrder = [
+        requestedProduct,
+        ...epoch.products.map((_, i) => i).filter(i => i !== requestedProduct)
+      ];
+
+      range.value = String(activeIndex);
+      indexLabel.textContent = (activeIndex + 1) + " / " + epochs.length;
+      caption.textContent =
+        utcFromMjd(epoch.mjd) + " · MJD " + epoch.mjd.toFixed(6) +
+        (epoch.observationId ? " · " + epoch.observationId : "");
+      productSelect.innerHTML = "";
+      epoch.products.forEach((item, i) => {
+        const option = document.createElement("option");
+        option.value = String(i);
+        option.textContent = productLabel(item, i);
+        productSelect.appendChild(option);
+      });
+
+      root.dataset.loading = "true";
+      caption.dataset.state = "loading";
+      let loaded = false;
+      let loadedProduct = -1;
+
+      for (const candidate of productOrder) {
+        if (token !== selectionToken) return false;
+        activeProduct = candidate;
+        productSelect.value = String(candidate);
+        loaded = await window.SpherexViewer.loadRecord(epoch.products[candidate], searchCoordinates);
+        if (token !== selectionToken) return false;
+        if (loaded) {
+          loadedProduct = candidate;
+          break;
+        }
       }
+
+      root.dataset.loading = "false";
+      if (loaded) {
+        caption.dataset.state = "loaded";
+        if (loadedProduct !== requestedProduct) {
+          caption.textContent += " · preferred product unavailable; loaded another product.";
+        }
+        if (offset > 0) {
+          caption.textContent += " · skipped " + offset + " unavailable epoch" + (offset === 1 ? "" : "s") + ".";
+        }
+        preloadUpcoming(activeIndex);
+        return true;
+      }
+
+      caption.dataset.state = "error";
+      caption.textContent += " · observation unavailable; automatically trying the next epoch…";
     }
 
     root.dataset.loading = "false";
-    caption.dataset.state = loaded ? "loaded" : "error";
-    if (!loaded) {
-      caption.textContent += " · all FITS products in this epoch failed; playback can skip this epoch.";
-    } else {
-      if (loadedProduct !== requestedProduct) {
-        caption.textContent += " · requested product unavailable; loaded another product from this epoch.";
-      }
-      preloadUpcoming(activeIndex);
-    }
-    return loaded;
-  }
-
-  async function advance(token) {
-    if (!playing || token !== playbackToken) return;
-
-    // Skip unavailable products/epochs during playback instead of pausing
-    // the time-machine on a failed FITS request.
-    let attempts = 0;
-    let loaded = false;
-    while (playing && token === playbackToken &&
-           attempts < epochs.length && !loaded) {
-      const nextIndex = (activeIndex + 1) % epochs.length;
-      loaded = await selectEpoch(nextIndex);
-      attempts++;
-    }
-
-    if (!playing || token !== playbackToken) return;
-    if (!loaded) {
-      stopPlayback();
-      caption.dataset.state = "error";
-      caption.textContent = "Playback stopped: no loadable FITS images were found in the remaining epochs.";
-      return;
-    }
-
-    window.setTimeout(() => advance(token), 900);
+    caption.dataset.state = "error";
+    caption.textContent = "No loadable FITS observations were found in this timeline. Try another target or search range.";
+    return false;
   }
 
   function setTimeline(rows, ra, dec) {
@@ -254,27 +246,27 @@
     next.disabled = epochs.length < 2;
     play.disabled = epochs.length < 2;
     productSelect.disabled = false;
-    selectEpoch(0, 0);
+    selectEpoch(0, 0, 1);
   }
 
   previous.addEventListener("click", () => {
     stopPlayback();
-    selectEpoch((activeIndex - 1 + epochs.length) % epochs.length);
+    selectEpoch((activeIndex - 1 + epochs.length) % epochs.length, null, -1);
   });
 
   next.addEventListener("click", () => {
     stopPlayback();
-    selectEpoch((activeIndex + 1) % epochs.length);
+    selectEpoch((activeIndex + 1) % epochs.length, null, 1);
   });
 
   range.addEventListener("change", () => {
     stopPlayback();
-    selectEpoch(Number(range.value));
+    selectEpoch(Number(range.value), null, 1);
   });
 
   productSelect.addEventListener("change", () => {
     stopPlayback();
-    selectEpoch(activeIndex, Number(productSelect.value));
+    selectEpoch(activeIndex, Number(productSelect.value), 1);
   });
 
   play.addEventListener("click", () => {
