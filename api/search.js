@@ -182,9 +182,16 @@ export default async function (req, res) {
   }
 
   const filters = { startDate, endDate, wavelengthMin, wavelengthMax };
-  const settled = await Promise.allSettled(
-    requested.map(collection => queryCollection(collection, ra, dec, radius, filters))
-  );
+  // Query collections sequentially instead of opening four IRSA requests at once.
+  // This reduces burst pressure on SIA2 and makes transient upstream failures less likely.
+  const settled = [];
+  for (const collection of requested) {
+    try {
+      settled.push({ status: "fulfilled", value: await queryCollection(collection, ra, dec, radius, filters) });
+    } catch (reason) {
+      settled.push({ status: "rejected", reason });
+    }
+  }
   const records = settled.flatMap(item => item.status === "fulfilled" ? item.value : []);
   const failures = settled.map((item, index) => item.status === "rejected"
     ? { collection: requested[index], error: String(item.reason?.message || item.reason) }
