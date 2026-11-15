@@ -147,9 +147,7 @@ async function queryTapFallback(ra, dec, radius, filters, requested) {
     "1 = CONTAINS(POINT('ICRS', " + ra + ", " + dec + "), p.poly)"
   ];
 
-  // Keep a single-release selection constrained to that release. TAP does not
-  // expose the SIA collection names directly; wide/deep are represented by
-  // the real product footprints in the shared SPHEREx metadata tables.
+  // TAP stores the DR1 and QR3 spectral-image footprints in shared metadata tables.
   const wantsDr1 = requested.some(value => /^spherex_dr1(?:_deep)?$/.test(value));
   const wantsQr3 = requested.some(value => /^spherex_qr3(?:_deep)?$/.test(value));
   if (wantsDr1 && !wantsQr3) where.push("a.uri LIKE '%/dr1/%'");
@@ -161,7 +159,7 @@ async function queryTapFallback(ra, dec, radius, filters, requested) {
   }
   if (filters.endDate) {
     const endMs = Date.parse(filters.endDate);
-    const inclusiveEnd = endMs + (/^\\d{4}-\\d{2}-\\d{2}$/.test(filters.endDate) ? 86400000 : 0);
+    const inclusiveEnd = endMs + (/^\d{4}-\d{2}-\d{2}$/.test(filters.endDate) ? 86400000 : 0);
     where.push("p.time_bounds_lower <= " + (inclusiveEnd / 86400000 + 40587));
   }
   if (filters.wavelengthMin != null) {
@@ -202,14 +200,14 @@ async function queryTapFallback(ra, dec, radius, filters, requested) {
       const responseText = await response.text();
       if (!response.ok) {
         const error = new Error("IRSA TAP HTTP " + response.status + ": " +
-          responseText.replace(/<[^>]+>/g, " ").replace(/\\s+/g, " ").slice(0, 220));
+          responseText.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").slice(0, 220));
         error.retryable = [429, 502, 503, 504].includes(response.status);
         throw error;
       }
       const rows = parseVOTable(responseText, "spherex_tap");
       return rows.filter(row => {
         const value = String(row.access_url || "");
-        return /^https:\\/\\/irsa\\.ipac\\.caltech\\.edu\\/ibe\\/data\\/spherex\\/(?:dr1|qr3)\\//i.test(value) &&
+        return /^https:\/\/irsa\.ipac\.caltech\.edu\/ibe\/data\/spherex\/(?:dr1|qr3)\//i.test(value) &&
           value.toLowerCase().endsWith(".fits");
       });
     } catch (error) {
