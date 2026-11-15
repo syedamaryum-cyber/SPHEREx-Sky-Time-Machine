@@ -143,43 +143,37 @@ async function queryCollection(collection, ra, dec, radius, filters) {
 
 
 async function queryTapFallback(ra, dec, radius, filters, requested) {
+  // This is the documented IRSA SPHEREx metadata query pattern:
+  // spherex.artifact JOIN spherex.plane, with a sky-footprint CONTAINS test.
   const where = [
     "1 = CONTAINS(POINT('ICRS', " + ra + ", " + dec + "), p.poly)"
   ];
 
-  // TAP stores the DR1 and QR3 spectral-image footprints in shared metadata tables.
   const wantsDr1 = requested.some(value => /^spherex_dr1(?:_deep)?$/.test(value));
   const wantsQr3 = requested.some(value => /^spherex_qr3(?:_deep)?$/.test(value));
   if (wantsDr1 && !wantsQr3) where.push("a.uri LIKE '%/dr1/%'");
   if (wantsQr3 && !wantsDr1) where.push("a.uri LIKE '%/qr3/%'");
 
+  // IRSA's public notebook documents time_bounds_lower and
+  // energy_bandpassname. Avoid guessing unverified table columns.
   const toMjd = value => Date.parse(value) / 86400000 + 40587;
   if (filters.startDate) {
-    where.push("p.time_bounds_upper >= " + toMjd(filters.startDate));
+    where.push("p.time_bounds_lower >= " + toMjd(filters.startDate));
   }
   if (filters.endDate) {
     const endMs = Date.parse(filters.endDate);
-    const inclusiveEnd = endMs + (/^\d{4}-\d{2}-\d{2}$/.test(filters.endDate) ? 86400000 : 0);
-    where.push("p.time_bounds_lower <= " + (inclusiveEnd / 86400000 + 40587));
-  }
-  if (filters.wavelengthMin != null) {
-    where.push("p.energy_bounds_upper >= " + (filters.wavelengthMin * 1e-6));
-  }
-  if (filters.wavelengthMax != null) {
-    where.push("p.energy_bounds_lower <= " + (filters.wavelengthMax * 1e-6));
+    const endInclusive = endMs + (/^\d{4}-\d{2}-\d{2}$/.test(filters.endDate) ? 86400000 : 0);
+    where.push("p.time_bounds_lower <= " + (endInclusive / 86400000 + 40587));
   }
 
   const query = [
     "SELECT TOP 2000",
     "  'https://irsa.ipac.caltech.edu/' || a.uri AS access_url,",
     "  p.time_bounds_lower AS t_min,",
-    "  p.time_bounds_upper AS t_max,",
-    "  p.energy_bounds_lower AS em_min,",
-    "  p.energy_bounds_upper AS em_max,",
     "  p.energy_bandpassname AS energy_bandpassname,",
-    "  CASE WHEN a.uri LIKE '%/dr1/%' THEN 'SPHEREx DR1 (TAP fallback)'",
-    "       WHEN a.uri LIKE '%/qr3/%' THEN 'SPHEREx QR3 (TAP fallback)'",
-    "       ELSE 'SPHEREx (TAP fallback)' END AS collection",
+    "  CASE WHEN a.uri LIKE '%/dr1/%' THEN 'spherex_dr1'",
+    "       WHEN a.uri LIKE '%/qr3/%' THEN 'spherex_qr3'",
+    "       ELSE 'spherex_tap' END AS collection",
     "FROM spherex.artifact a",
     "JOIN spherex.plane p ON a.planeid = p.planeid",
     "WHERE " + where.join(" AND "),
@@ -188,7 +182,7 @@ async function queryTapFallback(ra, dec, radius, filters, requested) {
 
   const endpoint = new URL("https://irsa.ipac.caltech.edu/TAP/sync");
   endpoint.searchParams.set("QUERY", query);
-  endpoint.searchParams.set("FORMAT", "votable");
+  endpoint.searchParams.set("FORMAT", "VOTABLE");
   endpoint.searchParams.set("MAXREC", "2000");
 
   let lastError;
