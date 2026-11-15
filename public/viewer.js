@@ -27,14 +27,21 @@
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
   function worldToPixel(wcs, ra, dec) {
-    const a0 = Number(wcs.CRVAL1) * rad;
-    const d0 = Number(wcs.CRVAL2) * rad;
-    const a = ra * rad;
-    const d = dec * rad;
+    // This lightweight transform deliberately supports TAN and TAN-SIP only.
+    // For any other projection, omit the marker rather than draw a plausible
+    // but scientifically incorrect position.
+    if (!/TAN/i.test(String(wcs.CTYPE1 || "")) ||
+        !/TAN/i.test(String(wcs.CTYPE2 || ""))) return null;
+
+    const crpix1 = Number(wcs.CRPIX1), crpix2 = Number(wcs.CRPIX2);
+    const crval1 = Number(wcs.CRVAL1), crval2 = Number(wcs.CRVAL2);
+    if (![crpix1, crpix2, crval1, crval2].every(Number.isFinite)) return null;
+
+    const a0 = crval1 * rad, d0 = crval2 * rad;
+    const a = ra * rad, d = dec * rad;
     const da = ((a - a0 + Math.PI * 3) % (Math.PI * 2)) - Math.PI;
     const denominator = Math.sin(d) * Math.sin(d0) +
       Math.cos(d) * Math.cos(d0) * Math.cos(da);
-
     if (!Number.isFinite(denominator) || denominator <= 0) return null;
 
     const xi = Math.cos(d) * Math.sin(da) / denominator / rad;
@@ -48,10 +55,11 @@
     const determinant = cd11 * cd22 - cd12 * cd21;
     if (!Number.isFinite(determinant) || Math.abs(determinant) < 1e-20) return null;
 
-    let u = (cd22 * xi - cd12 * eta) / determinant;
-    let v = (-cd21 * xi + cd11 * eta) / determinant;
+    const targetU = (cd22 * xi - cd12 * eta) / determinant;
+    const targetV = (-cd21 * xi + cd11 * eta) / determinant;
+    const sip = Number(wcs.A_ORDER || 0) > 0 || Number(wcs.B_ORDER || 0) > 0;
 
-    const polynomial = (prefix, order) => {
+    const polynomial = (prefix, u, v) => {
       let sum = 0;
       const maxOrder = Number(wcs[prefix + "_ORDER"] || 0);
       for (let i = 0; i <= maxOrder; i++) {
@@ -63,13 +71,39 @@
       return sum;
     };
 
-    u += polynomial("A");
-    v += polynomial("B");
+    // SIP A/B are forward pixel distortions. Invert them iteratively;
+    // simply adding A/B to the linear solution is not the inverse mapping.
+    let u = targetU, v = targetV;
+    if (sip) {
+      let converged = false;
+      for (let iteration = 0; iteration < 15; iteration++) {
+        const f = u + polynomial("A", u, v) - targetU;
+        const g = v + polynomial("B", u, v) - targetV;
+        if (Math.max(Math.abs(f), Math.abs(g)) < 1e-5) {
+          converged = true;
+          break;
+        }
+        const h = 1e-3;
+        const fU = ((u + h) + polynomial("A", u + h, v) - targetU - f) / h;
+        const fV = (u + polynomial("A", u, v + h) - targetU - f) / h;
+        const gU = (v + polynomial("B", u + h, v) - targetV - g) / h;
+        const gV = ((v + h) + polynomial("B", u, v + h) - targetV - g) / h;
+        const jacobian = fU * gV - fV * gU;
+        if (!Number.isFinite(jacobian) || Math.abs(jacobian) < 1e-12) return null;
+        const du = (gV * f - fV * g) / jacobian;
+        const dv = (-gU * f + fU * g) / jacobian;
+        u -= du;
+        v -= dv;
+        if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
+      }
+      const residual = Math.max(
+        Math.abs(u + polynomial("A", u, v) - targetU),
+        Math.abs(v + polynomial("B", u, v) - targetV)
+      );
+      if (!converged && residual >= 1e-4) return null;
+    }
 
-    return {
-      x: Number(wcs.CRPIX1) - 1 + u,
-      y: Number(wcs.CRPIX2) - 1 + v
-    };
+    return { x: crpix1 - 1 + u, y: crpix2 - 1 + v };
   }
 
   function percentile(sorted, fraction) {
@@ -353,7 +387,7 @@
 
   function resizeCanvas() {
     const width = Math.max(320, canvas.clientWidth);
-    const height = 600;
+    const height = Math.max(320, Math.min(560, Math.round(width * 0.68)));
     canvas.width = width;
     canvas.height = height;
     canvas.style.height = height + "px";
@@ -494,7 +528,9 @@
       status.className = "status good";
       status.textContent = "Loaded real SPHEREx FITS cutout · " +
         data.metadata.width + " × " + data.metadata.height + " pixels" +
-        (inside ? " · searched coordinate marked in red." : " · searched coordinate falls outside this cutout.");
+        (pixel
+          ? (inside ? " · target position marked in red." : " · target position falls outside this cutout.")
+          : " · WCS projection could not be safely transformed; target marker omitted.");
       return true;
     } catch (error) {
       if (thisLoad !== loadSequence) return false;
@@ -512,7 +548,40 @@
     }
   }
 
+  function clearViewer(message = "No verified SPHEREx observation is currently loaded.") {
+    // Invalidate in-flight FITS and colour requests so an older target cannot
+    // repaint the canvas after the user changes target or starts a new search.
+    loadSequence++;
+    realColorRequest++;
+    previewSequence++;
+    current = null;
+    currentCoordinates = null;
+    dragging = false;
+    zoom = 1; panX = 0; panY = 0;
+    layerSelect.innerHTML = '<option value="image">Science image</option>';
+    layerSelect.disabled = true;
+    displayModeSelect.value = "false-colour";
+    displayModeSelect.disabled = true;
+    meta.innerHTML = "";
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#050a12";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = "#a9c4dc";
+    ctx.font = "13px ui-monospace, monospace";
+    ctx.fillText(message, 18, 30);
+    status.className = "status";
+    status.textContent = message;
+  }
+
+  window.addEventListener("spherex:search-results", event => {
+    const rows = event.detail?.rows;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      clearViewer("No verified SPHEREx observation is currently loaded. The previous image has been cleared.");
+    }
+  });
+
   window.SpherexViewer = {
+    clear: clearViewer,
     loadRecord(record, coordinates, options = {}) {
       if (!record || typeof record.access_url !== "string") return Promise.resolve(false);
       return openCutout({ dataset: { accessUrl: record.access_url } }, coordinates, options);
