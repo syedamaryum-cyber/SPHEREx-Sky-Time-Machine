@@ -424,7 +424,7 @@
     }
   }
 
-  async function openCutout(button, coordinates = null) {
+  async function openCutout(button, coordinates = null, options = {}) {
     const thisLoad = ++loadSequence;
     const accessUrl = button.dataset.accessUrl;
     const ra = Number(coordinates?.ra ?? document.getElementById("ra").value);
@@ -449,12 +449,10 @@
     ctx.font = "14px ui-monospace, monospace";
     ctx.fillText("Loading selected SPHEREx observation…", 18, 30);
     currentCoordinates = { ra, dec };
-    if (displayModeSelect.value !== "real-colour") {
-      const previewToken = ++previewSequence;
-      showTemporaryPreview({ ra, dec }, previewToken);
-    } else {
-      previewSequence++;
-    }
+    // Do not paint a Pan-STARRS placeholder over the selected SPHEREx
+    // display mode during timeline playback. It is a static survey image,
+    // not an epoch-specific observation.
+    previewSequence++;
 
     try {
       const data = await fetchCutoutData({ access_url: accessUrl }, { ra, dec });
@@ -484,9 +482,9 @@
       layerSelect.disabled = layerNames.length < 2 || displayModeSelect.value === "real-colour";
       zoom = 1; panX = 0; panY = 0;
       resizeCanvas();
-      showMetadata(data);
       if (displayModeSelect.value === "real-colour") loadRealColor();
-
+      else draw();
+      showMetadata(data);
       const inside = pixel && pixel.x >= 0 && pixel.x < data.metadata.width &&
         pixel.y >= 0 && pixel.y < data.metadata.height;
       status.className = "status good";
@@ -496,22 +494,24 @@
       return true;
     } catch (error) {
       if (thisLoad !== loadSequence) return false;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#050a12";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = "#ffb18b";
-      ctx.font = "13px ui-monospace, monospace";
-      ctx.fillText("Observation could not be loaded. Try again or skip to the next epoch.", 18, 30);
-      status.className = "status bad";
-      status.textContent = "FITS viewer error: " + error.message;
+      if (!options.quiet) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#050a12";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#ffb18b";
+        ctx.font = "13px ui-monospace, monospace";
+        ctx.fillText("Observation could not be loaded. Try again or skip to the next epoch.", 18, 30);
+        status.className = "status bad";
+        status.textContent = "FITS viewer error: " + error.message;
+      }
       return false;
     }
   }
 
   window.SpherexViewer = {
-    loadRecord(record, coordinates) {
+    loadRecord(record, coordinates, options = {}) {
       if (!record || typeof record.access_url !== "string") return Promise.resolve(false);
-      return openCutout({ dataset: { accessUrl: record.access_url } }, coordinates);
+      return openCutout({ dataset: { accessUrl: record.access_url } }, coordinates, options);
     },
     async preloadRecord(record, coordinates) {
       if (!record || typeof record.access_url !== "string") return false;
