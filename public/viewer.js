@@ -335,6 +335,7 @@
       const response = await fetch("/api/cutout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(22000),
         body: JSON.stringify({ accessUrl: record.access_url, ra, dec, size: 0.05 })
       });
       const data = await response.json();
