@@ -436,7 +436,11 @@
       return false;
     }
 
-    panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    // Timeline playback changes observations repeatedly; do not force the
+    // page to scroll back to the viewer on every epoch.
+    if (!options.quiet) {
+      panel.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
     status.className = "status";
     status.textContent = "Requesting a real FITS cutout from NASA/IPAC IRSA…";
     meta.innerHTML = "";
