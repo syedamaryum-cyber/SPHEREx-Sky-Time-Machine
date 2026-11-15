@@ -19,6 +19,10 @@
     .timeline-caption[data-state="loading"]{color:#ffd18a}
     .timeline-caption[data-state="error"]{color:#ffb18b}
     .timeline-note{margin-top:8px;color:#819bb4;font-size:10px;line-height:1.45}
+    .timeline-failures{margin-top:9px;border:1px solid #704a3b;border-radius:8px;background:#211914;color:#ffd2b5;font-size:11px}
+    .timeline-failures summary{padding:8px 10px;cursor:pointer}
+    .timeline-failures ul{margin:0;padding:0 28px 10px;max-height:180px;overflow:auto}
+    .timeline-failures li{margin:5px 0;overflow-wrap:anywhere}
     @media(max-width:600px){.timeline-actions label{margin-left:0}.timeline-actions select{flex:1;min-width:150px}}
   `;
   document.head.appendChild(style);
@@ -32,6 +36,13 @@
   const summary = document.getElementById("timeline-summary");
   const indexLabel = document.getElementById("timeline-index");
   const caption = document.getElementById("timeline-caption");
+  const failurePanel = document.createElement("details");
+  failurePanel.className = "timeline-failures";
+  failurePanel.hidden = true;
+  failurePanel.innerHTML = '<summary>Failed observations · <span>0</span></summary><ul></ul>';
+  caption.insertAdjacentElement("afterend", failurePanel);
+  const failureCount = failurePanel.querySelector("summary span");
+  const failureList = failurePanel.querySelector("ul");
 
   let epochs = [];
   let allEpochs = [];
@@ -41,6 +52,18 @@
   let playing = false;
   let playbackToken = 0;
   let selectionToken = 0;
+  let failedEpochs = new Map();
+
+  function renderFailures() {
+    failurePanel.hidden = failedEpochs.size === 0;
+    failureCount.textContent = String(failedEpochs.size);
+    failureList.replaceChildren();
+    for (const item of failedEpochs.values()) {
+      const li = document.createElement("li");
+      li.textContent = item.label + " — " + item.errors.join(" | ");
+      failureList.appendChild(li);
+    }
+  }
 
   const number = value => {
     const n = Number(value);
@@ -199,12 +222,16 @@
       caption.dataset.state = "loading";
       let loaded = false;
       let loadedProduct = -1;
+      const attemptErrors = [];
 
       for (const candidate of productOrder) {
         if (token !== selectionToken) return false;
         activeProduct = candidate;
         productSelect.value = String(candidate);
-        loaded = await window.SpherexViewer.loadRecord(epoch.products[candidate], searchCoordinates, { quiet: true });
+        loaded = await window.SpherexViewer.loadRecord(epoch.products[candidate], searchCoordinates, {
+          quiet: true,
+          onError: error => attemptErrors.push(productLabel(epoch.products[candidate], candidate) + ": " + (error?.message || String(error)))
+        });
         if (token !== selectionToken) return false;
         if (loaded) {
           loadedProduct = candidate;
@@ -225,8 +252,14 @@
         return true;
       }
 
-      // Keep failed records in the archive, but do not present their error
-      // frames as playable observations. Continue to the next candidate.
+      // Preserve the failure details for later inspection while keeping
+      // failed frames out of the visible playback sequence.
+      const failureKey = epoch.observationId || String(epoch.mjd);
+      failedEpochs.set(failureKey, {
+        label: utcFromMjd(epoch.mjd) + (epoch.observationId ? " · " + epoch.observationId : ""),
+        errors: attemptErrors.length ? attemptErrors : ["No usable FITS product returned."]
+      });
+      renderFailures();
     }
 
     root.dataset.loading = "false";
@@ -260,6 +293,8 @@
     preloadQueue.length = 0;
     queuedPreloads.clear();
     allEpochs = buildEpochs(Array.isArray(rows) ? rows : []);
+    failedEpochs = new Map();
+    renderFailures();
     modeSelect.value = "highlights";
     epochs = chooseSequence(allEpochs, "highlights");
     searchCoordinates = { ra, dec };
