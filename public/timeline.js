@@ -28,11 +28,13 @@
   const play = document.getElementById("timeline-play");
   const next = document.getElementById("timeline-next");
   const productSelect = document.getElementById("timeline-product");
+  const modeSelect = document.getElementById("timeline-mode");
   const summary = document.getElementById("timeline-summary");
   const indexLabel = document.getElementById("timeline-index");
   const caption = document.getElementById("timeline-caption");
 
   let epochs = [];
+  let allEpochs = [];
   let activeIndex = 0;
   let activeProduct = 0;
   let searchCoordinates = null;
@@ -134,6 +136,17 @@
     runPreloadWorkers();
   }
 
+  function chooseSequence(source, mode) {
+    if (mode === "all" || source.length <= 12) return source.slice();
+    const count = 12;
+    const chosen = [];
+    for (let i = 0; i < count; i++) {
+      const index = Math.round(i * (source.length - 1) / (count - 1));
+      if (!chosen.length || chosen[chosen.length - 1] !== source[index]) chosen.push(source[index]);
+    }
+    return chosen;
+  }
+
   function productIdentity(record) {
     return String(record.energy_bandpassname || record.band || record.instrument_name || "")
       .trim().toLowerCase();
@@ -148,8 +161,8 @@
     const step = direction < 0 ? -1 : 1;
     const firstIndex = (index + epochs.length) % epochs.length;
 
-    summary.textContent = epochs.length + " observing epochs · " +
-      epochs.reduce((total, item) => total + item.products.length, 0) + " FITS products";
+    summary.textContent = epochs.length + " playback epochs · " + allEpochs.length +
+      " total archive epochs · " + allEpochs.reduce((total, item) => total + item.products.length, 0) + " FITS products";
 
     for (let offset = 0; offset < epochs.length; offset++) {
       const epochIndex = (firstIndex + step * offset + epochs.length * 2) % epochs.length;
@@ -241,17 +254,20 @@
     selectionToken++;
     preloadQueue.length = 0;
     queuedPreloads.clear();
-    epochs = buildEpochs(Array.isArray(rows) ? rows : []);
+    allEpochs = buildEpochs(Array.isArray(rows) ? rows : []);
+    modeSelect.value = "highlights";
+    epochs = chooseSequence(allEpochs, "highlights");
     searchCoordinates = { ra, dec };
     activeIndex = 0;
     activeProduct = 0;
 
-    if (!epochs.length) {
+    if (!allEpochs.length) {
       root.hidden = true;
       return;
     }
 
     root.hidden = false;
+    modeSelect.disabled = allEpochs.length <= 1;
     range.min = "0";
     range.max = String(epochs.length - 1);
     range.value = "0";
@@ -262,6 +278,19 @@
     productSelect.disabled = false;
     selectEpoch(0, 0, 1);
   }
+
+  modeSelect.addEventListener("change", () => {
+    stopPlayback();
+    epochs = chooseSequence(allEpochs, modeSelect.value);
+    activeIndex = 0;
+    range.max = String(epochs.length - 1);
+    range.value = "0";
+    range.disabled = epochs.length < 2;
+    previous.disabled = epochs.length < 2;
+    next.disabled = epochs.length < 2;
+    play.disabled = epochs.length < 2;
+    selectEpoch(0, 0, 1);
+  });
 
   previous.addEventListener("click", () => {
     stopPlayback();
